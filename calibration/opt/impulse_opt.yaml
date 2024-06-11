@@ -1,0 +1,21 @@
+_root: calibration
+camera:
+  bin_size: 0.01
+  fov: 30
+  is_area: true
+  num_bins: 64
+light:
+  fov: 30
+  is_area: false
+  power: 10000
+mesh_path: calibration/data/mesh.obj
+render:
+  albedo: 0.5
+  normal_mode: vn
+  num_samples: 500000
+render_method: path
+setup:
+  min_elevation: 0
+  num_cameras: 16
+  radius: 0.0487
+setup_method: circle

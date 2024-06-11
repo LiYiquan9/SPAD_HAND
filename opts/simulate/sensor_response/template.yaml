@@ -1,0 +1,7 @@
+data_path: path_to_impulse_response.npz
+jitter_path: jitter.npz
+
+fwhm: 5
+power: 1
+noise: 1.e-5
+num_cycles: 500

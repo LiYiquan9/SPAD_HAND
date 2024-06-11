@@ -1,0 +1,26 @@
+_root: experiments
+camera:
+  bin_size: 0.02
+  fov: 60
+  is_area: true
+  num_bins: 128
+data_path: experiments/impulse_response.npz
+fwhm: 5
+jitter_path: jitter.npz
+light:
+  fov: 60
+  is_area: false
+  power: 1
+noise: 1.0e-05
+num_cycles: 500
+power: 1
+render:
+  albedo: 0.5
+  normal_mode: vn
+  num_samples: 50000
+render_method: path
+setup:
+  min_elevation: 30
+  num_cameras: 256
+  radius: 1
+setup_method: fibonacci
