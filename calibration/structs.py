@@ -87,38 +87,6 @@ class Anchor:
 
         self.a2w = torch.cat((R,  self.loc.view(-1, 1)), dim=1)
         
-    # def sample_fibonacci(self, num_samples):
-    #     """ Uniform sampling on Fibonacci spiral. """
-
-    #     golden_angle = np.pi * (3.0 - np.sqrt(5.0))
-    #     idx = np.linspace(0, num_samples - 1, num_samples) + 0.5
-    #     p = golden_angle * idx
-    #     cosa = np.cos(self.fov / 2)
-    #     cost = 1.0 - (1.0 - cosa) * idx / num_samples
-
-    #     sinp, cosp, sint = np.sin(p), np.cos(p), np.sqrt(1.0 - cost ** 2)
-    #     d = np.vstack((sint * cosp, sint * sinp, cost)).T
-    #     return d
-
-    # def sample_spherical(self, num_samples):
-    #     """ Uniform sampling of spherical coordinates. """
-
-    #     phi = 2 * np.pi * np.random.random(num_samples)
-    #     sinp, cosp = np.sin(phi), np.cos(phi)
-    #     cost = np.random.uniform(np.cos(self.fov / 2), 1.0, num_samples)
-    #     sint = np.sqrt(1.0 - cost ** 2)
-    #     d = np.vstack((sint * cosp, sint * sinp, cost)).T
-    #     return d
-    
-    # def sample_circle(self, num_samples):
-    #     """ Uniform sampling of circle coordinates. (for hand reconstruction)"""
-        
-    #     phi = np.linspace(0, 2 * np.pi, num_samples, endpoint=False)
-    #     sinp, cosp = np.sin(phi), np.cos(phi)
-    #     z = np.zeros_like(sinp)
-    #     d = np.vstack((cosp, sinp, z)).T
-    #     return d
-
 
 class Light(Anchor):
     """ Light source object. """

@@ -1,9 +1,7 @@
-import os
-import time
 import torch
 import torch.nn.functional as F
 import numpy as np
-import trimesh
+
 
 from calibration.render import evaluate_path_integral, evaluate_angular_integral
 from calibration.structs import Anchor, Light, Camera  # to .structs
@@ -43,7 +41,7 @@ def sim_hist(vertices, mesh, cam_loc, cam_norm):
     
     return impulse_response['hists']
     
-    # the following part is for differentiable sensor simulation
+    ### the following part is for differentiable sensor simulation ###
     
     # data = np.load("calibration/data/sensor_response.npz")
     # pulse_kernel = data["pulse_kernel"].astype(np.float32)
@@ -104,7 +102,6 @@ def sim_impulse_response(vertices, mesh, cam_loc, cam_norm):
     render_fn = evaluate_path_integral if opt["render_method"] == "path" else evaluate_angular_integral
 
     # run simulation
-    # print("Simulation started...")
     hists, Rts = [], []
     for idx, (light, camera) in enumerate(zip(lights, cameras)):
       

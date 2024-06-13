@@ -106,7 +106,7 @@ if __name__ == "__main__":
         predicted_hists = model()[0]
         predicted_hists.retain_grad() 
         model.cam_loc.retain_grad() 
-        # exit(0)
+        
         loss = model.compute_loss(predicted_hists.unsqueeze(0), hists_gt.to(torch.float32))
         loss.backward(retain_graph=True)
         
