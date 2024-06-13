@@ -4,6 +4,7 @@
  - I download the model in path: MANO/mano_v1_2/models/MANO_LEFT.pkl
  - [FreiHAND](https://lmb.informatik.uni-freiburg.de/projects/freihand/) go for this website and download hand dataset
  - I download the dataset in path: FreiHAND_dataset/mano, I then store the mesh in FreiHAND_dataset/mesh and simulated histograms in FreiHAND_dataset/simulation
+ - I prepared a example data for simulated hists based on hand mesh data in FreiHAND: [simulated_hists](https://drive.google.com/drive/folders/1-kuRENaA9SqBDw3XAcMS9uUSaDxowrNe?usp=drive_link)
 
 
 
