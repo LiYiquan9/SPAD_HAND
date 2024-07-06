@@ -47,7 +47,7 @@ python calibration/calibration_camera.py
  - Mano model demo is adapted from repo:[MANO](https://github.com/otaheri/MANO)
 
 
-## DOTO
+## TODO
 
 1. upload a pretrained hand pose estimation model
 2. upload RenderIH dataset
