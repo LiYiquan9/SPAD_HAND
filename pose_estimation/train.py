@@ -15,16 +15,18 @@ print(f"device: {device}")
 
 batch_size = 8
 
-trainset = CustomDataset("train", num_cameras=16)
+num_cameras = 8
+
+trainset = CustomDataset("train")
 
 trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
 
-testset = CustomDataset("test", num_cameras=16)
+testset = CustomDataset("test")
 
 testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
 
 # Model
-mano_estimator = MANOEstimator(device=device, num_cameras=16)
+mano_estimator = MANOEstimator(device=device, num_cameras=num_cameras)
 
 optimizer = optim.Adam(mano_estimator.parameters(), lr=1e-4)
 
@@ -51,8 +53,9 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
         for batch_idx, (x, h, y) in enumerate(trainloader):
 
             # use indices to downsample cameras (optional) 
-            # indices = torch.tensor([0,2,4,6,8,10,12,14])
-            # x, h = x[:,indices,:], h[:,indices,:]
+            if num_cameras == 8:
+                indices = torch.tensor([0,2,4,6,8,10,12,14])
+                x, h = x[:,indices,:], h[:,indices,:]
 
             noise = torch.randn(x.size()).to(device)*1
             
@@ -107,8 +110,10 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
                 y = torch.tensor(y).float().to(device)
                 
                 # use indices to downsample cameras (optional)
-                # indices = torch.tensor([0,2,4,6,8,10,12,14])
-                # x, h = x[:,indices,:], h[:,indices,:]
+                
+                if num_cameras == 8:
+                    indices = torch.tensor([0,2,4,6,8,10,12,14])
+                    x, h = x[:,indices,:], h[:,indices,:]
 
                 y_pose = y[...,:45]
                 y_shape = y[...,45:55]

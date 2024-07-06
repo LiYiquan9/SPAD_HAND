@@ -4,10 +4,11 @@ import math
 import torch.nn.functional as F
 
 class PositionalEncoder(torch.nn.Module):
-    def __init__(self, device):
+    def __init__(self, device, num_cameras=8):
         super(PositionalEncoder, self).__init__()
         
         self.device = device
+        self.num_cameras = num_cameras
         
     def forward(self, params):
         """
@@ -25,7 +26,7 @@ class PositionalEncoder(torch.nn.Module):
         y = r * torch.sin(theta)
         z = h
         
-        div_term = torch.exp(torch.arange(0, 16, 2).float() * (-math.log(10000.0) / 16)).to(self.device)
+        div_term = torch.exp(torch.arange(0, 16, 2).float() * (-math.log(10000.0) / 16.0)).to(self.device)
         
         pe_x = torch.zeros(params.size()[0], 16).to(self.device)
         pe_y = torch.zeros(params.size()[0], 16).to(self.device)
@@ -138,7 +139,7 @@ class MANOEstimator(nn.Module):
 
         self.layer0 = nn.Linear(64, 64)
         
-        self.pe = PositionalEncoder(self.device)
+        self.pe = PositionalEncoder(self.device, self.num_cameras)
         
         self.transformer = TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=1)
            
