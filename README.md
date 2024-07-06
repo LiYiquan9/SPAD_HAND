@@ -45,3 +45,10 @@ python calibration/calibration_camera.py
  - run Demo.ipynb to check the hand mesh for given mano parameters
 
  - Mano model demo is adapted from repo:[MANO](https://github.com/otaheri/MANO)
+
+
+## DOTO
+
+1. upload a pretrained hand pose estimation model
+2. upload RenderIH dataset
+3. revise hand pose estimation model
