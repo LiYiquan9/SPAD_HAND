@@ -15,11 +15,11 @@ print(f"device: {device}")
 
 batch_size = 8
 
-trainset = CustomDataset("train")
+trainset = CustomDataset("train", num_cameras=16)
 
 trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
 
-testset = CustomDataset("test")
+testset = CustomDataset("test", num_cameras=16)
 
 testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
 
@@ -37,9 +37,9 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
     
     now = datetime.now()
     utc_time = now.strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(f'results/train/{utc_time}')
+    os.makedirs(f'pose_estimation/results/train/{utc_time}')
     
-    logging.basicConfig(filename=f'results/train/{utc_time}/training_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
+    logging.basicConfig(filename=f'pose_estimation/results/train/{utc_time}/training_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
 
     model.to(device)
     
@@ -49,7 +49,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
         model.train()
         running_loss = 0.0
         for batch_idx, (x, h, y) in enumerate(trainloader):
-            
+
             # use indices to downsample cameras (optional) 
             # indices = torch.tensor([0,2,4,6,8,10,12,14])
             # x, h = x[:,indices,:], h[:,indices,:]
@@ -78,24 +78,22 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
             loss.backward()
             optimizer.step()
             
-            running_loss += loss.item()
-            if batch_idx % 100 == 0 and batch_idx != 0: # print data to evaluate model
-   
-                if batch_idx == 100:
-                    data = {
-                        "prediction_pose": outputs[0][:45].tolist(),  
-                        "target_pose": y[0][:45].tolist(),
-                        "prediction_shape": outputs[0][45:55].tolist(),
-                        "target_shape": y[0][45:55].tolist(),
-                        "epoch": epoch + 1,
-                        "batch": batch_idx + 1,
-                        "loss": running_loss / (100),
-                        "dataset":"train"
-                    }
-                    epoch_data.append(data)
-                
-                logging.info(f"Train Epoch: {epoch+1}, Batch: {batch_idx+1}, Loss: {running_loss / (100):.4f}")
-                running_loss = 0.0
+            running_loss += loss.item() * x.size(0)
+            
+            data = {
+                "prediction_pose": outputs[0][:45].tolist(),  
+                "target_pose": y[0][:45].tolist(),
+                "prediction_shape": outputs[0][45:55].tolist(),
+                "target_shape": y[0][45:55].tolist(),
+                "epoch": epoch ,
+                "batch": batch_idx ,
+                "loss": loss.item() / (1.0),
+                "dataset":"train"
+            }
+            epoch_data.append(data)
+        
+        logging.info(f"Train Epoch: {epoch}, Loss: {running_loss*1.0 / (len(trainloader)):.4f}")
+        
         
         scheduler.step()
                 
@@ -123,36 +121,35 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
             
                 loss = 0.1 * criterion(outputs_shape, y_shape) + criterion(outputs_pose, y_pose)
 
-                test_loss += loss.item()
+                test_loss += loss.item() * x.size(0)
                 
-                if batch_idx % 10 == 0 and batch_idx != 0:  # print data to evaluate model
-     
-                    data = {
-                    "prediction_pose": outputs[0][:45].tolist(),  
-                    "target_pose": y[0][:45].tolist(),
-                    "prediction_shape": outputs[0][45:55].tolist(),
-                    "target_shape": y[0][45:55].tolist(),
-                    "epoch": epoch + 1,
-                    "batch": batch_idx + 1,
-                    "loss": test_loss / (10),
-                    "dataset":"test"
-                    }
-                    epoch_data.append(data)
-                    
-                    logging.info(f"Test Epoch: {epoch+1}, Batch: {batch_idx+1}, Loss: {test_loss / (10):.4f}")
-                    test_loss = 0.0
+
+                data = {
+                "prediction_pose": outputs[0][:45].tolist(),  
+                "target_pose": y[0][:45].tolist(),
+                "prediction_shape": outputs[0][45:55].tolist(),
+                "target_shape": y[0][45:55].tolist(),
+                "epoch": epoch ,
+                "batch": batch_idx ,
+                "loss": loss.item() / (1.0),
+                "dataset":"test"
+                }
+                epoch_data.append(data)
                 
-    with open(f'results/train/{utc_time}/epoch_data.json', 'w') as f:
+            logging.info(f"Test Epoch: {epoch}, Loss: {test_loss / (len(testloader)):.4f}")
+            test_loss = 0.0
+                
+    with open(f'pose_estimation/results/train/{utc_time}/epoch_data.json', 'w') as f:
             json.dump(epoch_data, f, indent=4)
         
-    model_save_path = f'results/train/{utc_time}/model_epoch_{epochs}.pth'
+    model_save_path = f'pose_estimation/results/train/{utc_time}/model_epoch_{epochs}.pth'
     torch.save(mano_estimator.state_dict(), model_save_path)
     logging.info(f"Model state dictionary saved to {model_save_path}")
 
 
 if __name__ == "__main__":
      
-    train(mano_estimator, trainloader, testloader, optimizer, criterion, scheduler, epochs=5)
+    train(mano_estimator, trainloader, testloader, optimizer, criterion, scheduler, epochs=50)
     
     
     

@@ -6,7 +6,7 @@ import json
 
 
 class CustomDataset(Dataset):
-    def __init__(self, set="test",num_cameras=20):
+    def __init__(self, set="test",num_cameras=16):
         self.set = set
         self.path = f"FreiHAND_dataset/{set}"
         self.x_data = []
@@ -15,11 +15,11 @@ class CustomDataset(Dataset):
         self.num_cameras = num_cameras
 
         theta = np.linspace(0, 2 * np.pi, self.num_cameras, endpoint=False).reshape(self.num_cameras, 1)
-        phi = np.full(theta.shape, np.arctan(4))
+        phi = np.full(theta.shape, np.arctan(2.747))
         h = np.full(theta.shape, -0.001)
         r = np.full(theta.shape, 0.05)
         
-        params = np.hstack([h,r,theta,phi])
+        params = np.hstack([h, r, theta, phi])
         
         
         if self.set == "test":
@@ -28,7 +28,7 @@ class CustomDataset(Dataset):
                 hists = sensor_response["hists_jitter"]
                 self.x_data.append(hists)
                 
-                with open(f"FreiHAND_dataset_v3/train/mano/{i}.json", 'r') as file:
+                with open(f"FreiHAND_dataset/train/mano/{i}.json", 'r') as file:
                     mano_params = json.load(file)
                     
                     self.labels.append(mano_params[3:58])
