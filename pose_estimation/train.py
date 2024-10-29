@@ -13,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print(f"device: {device}")
 
-batch_size = 8
+batch_size = 256
 
 num_cameras = 8
 
@@ -32,7 +32,8 @@ optimizer = optim.Adam(mano_estimator.parameters(), lr=1e-4)
 
 scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
-criterion = nn.SmoothL1Loss()
+# criterion = nn.SmoothL1Loss()
+criterion = nn.MSELoss()
 
 # Training loop
 def train(model, trainloader, testloader, optimizer, criterion, scheduler, epochs):
@@ -54,7 +55,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
 
             # use indices to downsample cameras (optional) 
             if num_cameras == 8:
-                indices = torch.tensor([0,2,4,6,8,10,12,14])
+                indices = torch.tensor([13,15,1,3,5,7,9,11])
                 x, h = x[:,indices,:], h[:,indices,:]
 
             noise = torch.randn(x.size()).to(device)*1
@@ -77,7 +78,8 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
             outputs_shape = outputs[...,45:55]
 
             loss = 0.1 * criterion(outputs_shape, y_shape) + criterion(outputs_pose, y_pose)
-            
+            # loss = criterion(outputs_pose, y_pose)
+            print(f"train epoch {epoch} loss is {loss}")
             loss.backward()
             optimizer.step()
             
@@ -112,7 +114,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
                 # use indices to downsample cameras (optional)
                 
                 if num_cameras == 8:
-                    indices = torch.tensor([0,2,4,6,8,10,12,14])
+                    indices = torch.tensor([13,15, 1,3,5,7,9,11])
                     x, h = x[:,indices,:], h[:,indices,:]
 
                 y_pose = y[...,:45]
@@ -126,6 +128,8 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
             
                 loss = 0.1 * criterion(outputs_shape, y_shape) + criterion(outputs_pose, y_pose)
 
+                print(f"test epoch {epoch} loss is {loss}")
+                
                 test_loss += loss.item() * x.size(0)
                 
 
@@ -154,7 +158,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
 
 if __name__ == "__main__":
      
-    train(mano_estimator, trainloader, testloader, optimizer, criterion, scheduler, epochs=50)
+    train(mano_estimator, trainloader, testloader, optimizer, criterion, scheduler, epochs=400)
     
     
     

@@ -10,42 +10,22 @@ class PositionalEncoder(torch.nn.Module):
         self.device = device
         self.num_cameras = num_cameras
         
-    def forward(self, params):
+    def forward(self,hist_feature):
         """
-        x: shape[batchsize*num_cameras,4]
         return: shape[batchsize*num_cameras,64]
         """
-        params = params.to(self.device) 
-        
-        h = params[...,0]
-        r = params[...,1]
-        theta = params[...,2]
-        phi = params[...,3]
-        
-        x = r * torch.cos(theta)
-        y = r * torch.sin(theta)
-        z = h
-        
-        div_term = torch.exp(torch.arange(0, 16, 2).float() * (-math.log(10000.0) / 16.0)).to(self.device)
-        
-        pe_x = torch.zeros(params.size()[0], 16).to(self.device)
-        pe_y = torch.zeros(params.size()[0], 16).to(self.device)
-        pe_z = torch.zeros(params.size()[0], 16).to(self.device)
-        pe_phi = torch.zeros(params.size()[0], 16).to(self.device)
-        
-        pe_x[:, 0::2] = torch.sin(x.unsqueeze(-1) * div_term)
-        pe_x[:, 1::2] = torch.cos(x.unsqueeze(-1) * div_term)
-        pe_y[:, 0::2] = torch.sin(y.unsqueeze(-1) * div_term)
-        pe_y[:, 1::2] = torch.cos(y.unsqueeze(-1) * div_term)
-        pe_z[:, 0::2] = torch.sin(z.unsqueeze(-1) * div_term)
-        pe_z[:, 1::2] = torch.cos(z.unsqueeze(-1) * div_term)
-        pe_phi[:, 0::2] = torch.sin(phi.unsqueeze(-1) * div_term)
-        pe_phi[:, 1::2] = torch.cos(phi.unsqueeze(-1) * div_term)
+        params = torch.arange(self.num_cameras, device=self.device).repeat(hist_feature.size(0) // self.num_cameras)
+        params = params.to(self.device)
 
-        pe = torch.cat((pe_x, pe_y, pe_z, pe_phi), dim=-1)
+        div_term = torch.exp(torch.arange(0, 64, 2).float() * (-math.log(10000.0) / 64.0)).to(self.device)
+        
+        pe = torch.zeros(params.size(0), 64).to(self.device)
+        
+        pe[:, 0::2] = torch.sin(params.unsqueeze(-1) * div_term)
+        pe[:, 1::2] = torch.cos(params.unsqueeze(-1) * div_term)
         
         return pe
-   
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, embed_size, heads):
         super(MultiHeadAttention, self).__init__()
@@ -130,29 +110,34 @@ class MANOEstimator(nn.Module):
         device,
         num_cameras=16,
         dropout_rate=0.1,
-        
+        rot_type="aa"
     ):
         super().__init__()
         
         self.device = device
         self.num_cameras = num_cameras
-
-        self.layer0 = nn.Linear(64, 64)
+        self.rot_type=rot_type
         
+        self.conv1d = nn.Conv1d(1, 4, 4, stride=1, padding=0)
+        
+        self.layer0 = nn.Linear(64*1, 256)
+        
+        self.layer0_1 = nn.Linear(256, 64)
+
         self.pe = PositionalEncoder(self.device, self.num_cameras)
         
-        self.transformer = TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=1)
-           
-        # use a sequence of transformer blocks (optional)
-        # self.transformers = nn.ModuleList([
-        #     TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=1)
-        #     for _ in range(3)  
-        # ])
+        self.transformers = nn.ModuleList([
+            TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=1)
+            for _ in range(4)  
+        ])
               
         self.layer1 = nn.Linear(64*self.num_cameras, 256) # concat
         
-        self.layer2 = nn.Linear(256, 15*3 + 10)
-        
+        if self.rot_type == "6d":
+            self.layer2 = nn.Linear(256, 15*6 + 10 + 3 + 6) # pose + shape + global_translation + global_rotation
+        else:
+            self.layer2 = nn.Linear(256, 15*3 + 10 + 3 + 3) # pose + shape + global_translation + global_rotation
+            
         self.dropout = nn.Dropout(dropout_rate)
         
         self.bn0 = nn.BatchNorm1d(64) 
@@ -164,47 +149,46 @@ class MANOEstimator(nn.Module):
         self.camera_weights = nn.Parameter(torch.ones(num_cameras))
         
         
-        
-    def forward(self, x, h):
+    def forward(self, x):
         """
         x: shape[batchsize, num_cameras, num_bins]
-        h: shape[batchsize, num_cameras, num_params] # the postion params for each camera, now use 4
+        h: shape[batchsize, num_cameras] # camera index
         return: shape[batchsize, 15*3 + 10]
         """
         x = x.to(self.device)
-        h = h.to(self.device)
         
         batchsize, num_cameras, num_bins = x.size()
-        num_params = h.size()[-1]
-
-        x = x.view(batchsize * num_cameras, num_bins) # x: shape[batchsize * num_cameras, num_bins]
-        h = h.view(batchsize * num_cameras, num_params)
         
-        # hist_feature = self.conv1d(x).squeeze(1)
-        hist_feature = self.layer0(x)
+        # x = x.view(batchsize * num_cameras,1 , num_bins) # x: shape[batchsize * num_cameras, channel=1, num_bins]
         
-        hist_feature = F.relu((hist_feature))
+        # hist_feature = self.conv1d(x)
+        hist_feature = x
+        
+        hist_feature = hist_feature.view(batchsize * num_cameras, -1) # hist_feature [batchsize * num_cameras, 64]
+        
+        hist_feature = self.layer0(hist_feature) 
+        
+        hist_feature = F.relu(hist_feature)
 
-        feature = hist_feature + self.pe(h) # shape[batchsize*num_cameras, 64]
+        hist_feature = self.layer0_1(hist_feature)
+        
+        hist_feature = F.relu(hist_feature)
+        
+        feature = hist_feature + self.pe(hist_feature) # shape[batchsize*num_cameras, 64]
             
-        feature = feature.view(batchsize, num_cameras, num_bins)
+        feature = feature.view(batchsize, num_cameras, -1)
         
-        feature = self.transformer(feature)
-        
-        # use a sequence of transformer blocks (optional)
-        # for transformer in self.transformers:
-        #     feature = transformer(feature)
+        for transformer in self.transformers:
+            feature = transformer(feature)
 
         concatenated_feature = feature.view(batchsize, -1) # concat
        
         feature = self.layer1(concatenated_feature)
         
-        feature = F.relu((feature))
+        feature = F.relu(feature)
         
         feature = self.dropout(feature)
         
         output = self.layer2(feature) 
         
         return output
-        
-        
