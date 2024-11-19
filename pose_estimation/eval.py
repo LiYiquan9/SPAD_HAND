@@ -98,6 +98,4 @@ def eval(model, testloader, criterion):
 if __name__ == "__main__":
      
     eval(mano_estimator, testloader, criterion)
-    
-    
-    
+ 

@@ -56,12 +56,11 @@ criterion = nn.SmoothL1Loss()
 l1_metrics = nn.L1Loss()
 
 mano_layer = ManoLayer(
-            mano_assets_root="/home/yiquan/SPAD-Hand-Sim/data/", flat_hand_mean=False
+            mano_assets_root="SPAD-Hand-Sim/data", flat_hand_mean=False
         ).cuda()
 
-# checkpoint_path = "/home/yiquan/spad_hand/pose_estimation/results/train/2024-10-24_17-31-34/model_199.pth"
-checkpoint_path = "/home/yiquan/spad_hand/pose_estimation/results/train/2024-10-28_08-12-54/model_499.pth" # pretrain
-# checkpoint_path = "/home/yiquan/spad_hand/pose_estimation/results/train/2024-10-28_08-35-16/model_499.pth" # no pretrain
+checkpoint_path = "/pose_estimation/results/train/2024-10-31_17-52-07/model_499.pth" # casey
+
 # Evaluation
 def eval(model, trainloader, testloader, optimizer, criterion, scheduler, epochs, rot_type="aa", save_model_interval=25):
     

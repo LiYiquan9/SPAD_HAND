@@ -55,13 +55,13 @@ criterion = nn.SmoothL1Loss()
 l1_metrics = nn.L1Loss()
 
 mano_layer = ManoLayer(
-            mano_assets_root="/home/yiquan/SPAD-Hand-Sim/data/", flat_hand_mean=False
+            mano_assets_root="SPAD-Hand-Sim/data", flat_hand_mean=False
         ).cuda()
 
 # shape = torch.tensor([-1.1349,  0.6011, -1.7715, -0.7393, -0.9420, -1.2335, -0.8998,  1.0710,
 #           0.8010,  1.2894]).cuda()
 
-checkpoint_path = "/home/yiquan/spad_hand/pose_estimation/results/train/2024-10-21_07-32-43/model_199.pth"
+checkpoint_path = "pose_estimation/results/train/2024-10-21_07-32-43/model_199.pth"
 
 # Training loop
 def train(model, trainloader, testloader, optimizer, criterion, scheduler, epochs, rot_type="aa", save_model_interval=25):
@@ -72,7 +72,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
     
     logging.basicConfig(filename=f'pose_estimation/results/train/{utc_time}/training_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
 
-    # model.load_state_dict(torch.load(checkpoint_path))
+    model.load_state_dict(torch.load(checkpoint_path))
 
     model.to(device)
     
@@ -139,7 +139,7 @@ def train(model, trainloader, testloader, optimizer, criterion, scheduler, epoch
             vertices_loss = criterion(vertices_pred*1000, vertices_gt*1000)
             joint_loss = criterion(joint_gt*1000, joint_pred*1000)
 
-            loss = 1.0*pose_6d_loss + 0.01 * shape_loss + 0.01 * trans_loss + 0.01*rot_loss + 0.01 * vertices_loss + 0.01 * joint_loss
+            loss = 1.0*pose_6d_loss + 0.01 * shape_loss + 0.01 * trans_loss + 0.01*rot_loss + 0.05 * vertices_loss + 0.05 * joint_loss
 
             wandb.log({
                 "train_pose_6d_loss": pose_6d_loss.item(),
