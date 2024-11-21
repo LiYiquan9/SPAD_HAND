@@ -21,41 +21,8 @@ cd manotorch && pip install -e . && cd ..
 
  - Cuda version on my device is 11.8
 
-## Install dependencies (Carter's version, with docker):
-What I did on ThinkPad to get nvdiffrast working:
-```sh
-git clone https://github.com/NVlabs/nvdiffrast
-```
-modift the docker file to include conda install by adding this at the bottom:
-```dockerfile
-RUN pip install matplotlib tqdm scipy
-```
 
-run:
-```sh
-./run_sample.sh --build-container
-cd ..
-docker run -it -v .:/app gltorch
-cd /app
-pip install iopath
-pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1110/download.html
-```
-
-### Handy commands
-List all docker containers (which you exited with ctrl+D):
-```sh
-docker ps -aq
-```
-Remove all docker containers
-```sh
-docker rm $(docker ps -aq)
-```
-Remove gltorch docker image
-```sh
-docker image rm gltorch
-```
-
-## Install dependencies (Carter's version, install nvdiffrast from source):
+## Install dependencies (Carter's version):
 ```sh
 mamba create -n spad_hand python=3.10
 mamba activate spad_hand
