@@ -9,8 +9,9 @@
 
 
 
-## Install dependencies:
+## Install dependencies (Yiquan's version):
 
+Yiquan's instructions:
 ```sh
 conda create -n spad_hand python=3.10
 conda activate spad_hand
@@ -19,6 +20,64 @@ cd manotorch && pip install -e . && cd ..
 ```
 
  - Cuda version on my device is 11.8
+
+## Install dependencies (Carter's version, with docker):
+What I did on ThinkPad to get nvdiffrast working:
+```sh
+git clone https://github.com/NVlabs/nvdiffrast
+```
+modift the docker file to include conda install by adding this at the bottom:
+```dockerfile
+RUN pip install matplotlib tqdm scipy
+```
+
+run:
+```sh
+./run_sample.sh --build-container
+cd ..
+docker run -it -v .:/app gltorch
+cd /app
+pip install iopath
+pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py38_cu113_pyt1110/download.html
+```
+
+### Handy commands
+List all docker containers (which you exited with ctrl+D):
+```sh
+docker ps -aq
+```
+Remove all docker containers
+```sh
+docker rm $(docker ps -aq)
+```
+Remove gltorch docker image
+```sh
+docker image rm gltorch
+```
+
+## Install dependencies (Carter's version, install nvdiffrast from source):
+```sh
+mamba create -n spad_hand python=3.10
+mamba activate spad_hand
+mamba install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia
+mamba install -c iopath iopath
+mamba install pytorch3d -c pytorch3d
+mamba install matplotlib tqdm scipy
+cd manotorch && pip install -e . && cd ..
+git clone https://github.com/NVlabs/nvdiffrast
+cd nvdiffrast
+pip install .
+mamba install trimesh
+pip install chumpy
+pip install opencv-python
+mamba install ninja
+```
+
+If you try to run sim_hist_batch.py now, you'll get an ImportError in chumpy's code. So go to 
+/home/carter/miniforge3/envs/spad_hand/lib/python3.10/site-packages/chumpy/__init__.py and delete line 11, which is:
+```python
+from numpy import bool, int, float, complex, object, unicode
+```
 
 ## Generate simulation data
 
