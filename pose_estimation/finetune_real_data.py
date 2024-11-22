@@ -61,7 +61,7 @@ mano_layer = ManoLayer(
 # shape = torch.tensor([-1.1349,  0.6011, -1.7715, -0.7393, -0.9420, -1.2335, -0.8998,  1.0710,
 #           0.8010,  1.2894]).cuda()
 
-checkpoint_path = "pose_estimation/results/train/2024-10-21_07-32-43/model_199.pth"
+checkpoint_path = "pose_estimation/results/train/2024-11-22_10-38-49/model_199.pth"
 
 # Training loop
 def train(model, trainloader, testloader, optimizer, criterion, scheduler, epochs, rot_type="aa", save_model_interval=25):

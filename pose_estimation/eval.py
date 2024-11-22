@@ -21,7 +21,7 @@ testset = CustomDataset("test")
 testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
 
 # Model
-mano_estimator = MANOEstimator(device=device)
+mano_estimator = MANOEstimator(device=device, num_cameras=8, rot_type="6d")
 
 optimizer = optim.Adam(mano_estimator.parameters(), lr=1e-4)
 
@@ -29,16 +29,16 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
 
 criterion = nn.SmoothL1Loss()
 
-checkpoint_path = 'path to checkpoint'
+checkpoint_path = 'pose_estimation/results/train/2024-11-22_10-38-49/model_199.pth'
 
 # Evaluation
 def eval(model, testloader, criterion):
     
     now = datetime.now()
     utc_time = now.strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(f'results/eval/{utc_time}')
+    os.makedirs(f'pose_estimation/results/eval/{utc_time}')
     
-    logging.basicConfig(filename=f'results/eval/{utc_time}/evalutating_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
+    logging.basicConfig(filename=f'pose_estimation/results/eval/{utc_time}/evalutating_log.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filemode='w')
 
     model.load_state_dict(torch.load(checkpoint_path))
     
@@ -51,9 +51,9 @@ def eval(model, testloader, criterion):
     model.eval()
     
     test_loss = 0.0
-    for batch_idx, (x, h, y) in enumerate(testloader):
+    for batch_idx, (x, y) in enumerate(testloader):
         x = torch.tensor(x).float().to(device)
-        h = torch.tensor(h).float().to(device)
+        # h = torch.tensor(h).float().to(device)
         y = torch.tensor(y).float().to(device)
         
         # use indices to downsaple cameras (optional)
@@ -64,7 +64,7 @@ def eval(model, testloader, criterion):
         y_shape = y[...,45:55]
     
         # Forward pass
-        outputs = model(x, h)
+        outputs = model(x)
         
         outputs_pose = outputs[...,:45]
         outputs_shape = outputs[...,45:55]
@@ -91,11 +91,10 @@ def eval(model, testloader, criterion):
     avg_loss = test_loss * 10/ len(testloader)
     logging.info(f"Average Loss: {avg_loss:.4f}")
     
-    with open(f'results/eval/{utc_time}/epoch_data.json', 'w') as f:
+    with open(f'pose_estimation/results/eval/{utc_time}/epoch_data.json', 'w') as f:
             json.dump(epoch_data, f, indent=4)
    
 
 if __name__ == "__main__":
-     
     eval(mano_estimator, testloader, criterion)
  

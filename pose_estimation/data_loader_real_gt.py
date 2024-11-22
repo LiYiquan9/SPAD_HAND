@@ -18,12 +18,12 @@ class RealGTDataset(Dataset):
         self.num_cameras = num_cameras
         
         dataset_path_list = [
-            "real_data/2024-10-23_carter_250",
+            "real_data/captures/2024-10-23_carter_250",
             # "real_data/2024-10-30_casey_250"
         ]
         
         for dataset_path in dataset_path_list:
-            labels_path = f"{dataset_path}/250_mano_adjust.json"
+            labels_path = f"{dataset_path}/gt/labels_corrected.json"
             
             with open(labels_path, 'r') as file:
                 label_data = json.load(file)
@@ -47,10 +47,12 @@ class RealGTDataset(Dataset):
 
                     self.x_data.append(sensor_data)
 
-                    mano_params_pose = (torch.from_numpy(np.array(label_data[j]['pose_aa']))).reshape(1,45).cpu().numpy()
-                    mano_params_shape = torch.tensor(label_data[j]['shape']).reshape(1,10).cpu().numpy()
-                    global_trans = torch.tensor(label_data[j]['hand_transl']).reshape(1,3).cpu().numpy()
-                    global_rot = torch.from_numpy(np.array(label_data[j]['wrist_aa']).reshape(1, 3)).cpu().numpy()
+                    j_string = f"{j+1:06d}"
+
+                    mano_params_pose = (torch.from_numpy(np.array(label_data[j_string]['pose_aa']))).reshape(1,45).cpu().numpy()
+                    mano_params_shape = torch.tensor(label_data[j_string]['shape']).reshape(1,10).cpu().numpy()
+                    global_trans = torch.tensor(label_data[j_string]['hand_transl']).reshape(1,3).cpu().numpy()
+                    global_rot = torch.from_numpy(np.array(label_data[j_string]['wrist_aa']).reshape(1, 3)).cpu().numpy()
                     
                     mano_params = np.concatenate([mano_params_pose,mano_params_shape, global_trans,global_rot],axis=1)
                     
@@ -74,10 +76,11 @@ class RealGTDataset(Dataset):
 
                     self.x_data.append(sensor_data)
    
-                    mano_params_pose = (torch.from_numpy(np.array(label_data[j]['pose_aa']))).reshape(1,45).cpu().numpy()
-                    mano_params_shape = torch.tensor(label_data[j]['shape']).reshape(1,10).cpu().numpy()
-                    global_trans = torch.tensor(label_data[j]['hand_transl']).reshape(1,3).cpu().numpy()
-                    global_rot = torch.from_numpy(np.array(label_data[j]['wrist_aa']).reshape(1, 3)).cpu().numpy()
+                    j_string = f"{j+1:06d}"
+                    mano_params_pose = (torch.from_numpy(np.array(label_data[j_string]['pose_aa']))).reshape(1,45).cpu().numpy()
+                    mano_params_shape = torch.tensor(label_data[j_string]['shape']).reshape(1,10).cpu().numpy()
+                    global_trans = torch.tensor(label_data[j_string]['hand_transl']).reshape(1,3).cpu().numpy()
+                    global_rot = torch.from_numpy(np.array(label_data[j_string]['wrist_aa']).reshape(1, 3)).cpu().numpy()
                     
                     mano_params = np.concatenate([mano_params_pose,mano_params_shape, global_trans,global_rot],axis=1)
                     

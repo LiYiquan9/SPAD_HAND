@@ -6,3 +6,5 @@ pose_estimation/results/
 wandb/
 **/__pycache__/
 *.pyc
+real_data/
+results/

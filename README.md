@@ -49,6 +49,11 @@ If you try to run sim_hist_batch.py now, you'll get an ImportError in chumpy's c
 from numpy import bool, int, float, complex, object, unicode
 ```
 
+## (On ThinkPad only) set up symbolic link to real-world data
+```sh
+ln -s ~/projects/SPAD-Hand-Pose-Capture/data/captures real_data
+```
+
 ## Generate simulation data
 
 ```sh
