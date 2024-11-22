@@ -13,7 +13,7 @@ class CustomDataset(Dataset):
         self.num_cameras = num_cameras
         
         
-        hists_dataset_path = "DART/DART_hist_data_500000_shape_rot_trans_sampling_10_20.npz"
+        hists_dataset_path = "DART/DART_hist_data_500000_shape_rot_trans_sampling_11_22.npz"
         if self.set == "test":
       
             hists = np.load(hists_dataset_path)['hist'][400000:500000,:,:64]

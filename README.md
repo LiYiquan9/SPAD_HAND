@@ -38,6 +38,9 @@ mamba install trimesh
 pip install chumpy
 pip install opencv-python
 mamba install ninja
+# now you have enough to run sim_hist_batch.py. The below is to be able to run train, eval, etc.
+cd manotorch
+pip install -e .
 ```
 
 If you try to run sim_hist_batch.py now, you'll get an ImportError in chumpy's code. So go to 
