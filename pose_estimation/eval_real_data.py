@@ -215,6 +215,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # The opts filename will be used as the directory name for output
+    opts_fname = os.path.basename(args.opts).split(".")[0]
+
     # Open and read in opts YAML file
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
@@ -222,8 +225,7 @@ if __name__ == "__main__":
     assert opts["test_data_type"] == "real", "Data type must be real for this script"
 
     # Create output directory and copy yaml tile to it
-    start_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = f"pose_estimation/results/eval/{start_time}"
+    output_dir = f"pose_estimation/results/eval/{opts_fname}"
     os.makedirs(output_dir, exist_ok=False)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)

@@ -1,5 +1,5 @@
 batch_size: 16
-checkpoint_path: pose_estimation/results/train/2024-11-22_10-38-49/model_199.pth
+checkpoint_path: pose_estimation/results/train/pt_sim/model_final.pth
 dset_paths:
   - data/real_data/captures/2024-10-23_carter_250
 epochs: 500

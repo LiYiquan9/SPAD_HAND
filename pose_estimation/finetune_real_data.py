@@ -321,13 +321,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # The opts filename will be used as the directory name for output
+    opts_fname = os.path.basename(args.opts).split(".")[0]
+
     # Open and read in opts YAML file
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
 
     # Create output directory and copy yaml tile to it
-    start_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_dir = f"pose_estimation/results/train/{start_time}"
+    output_dir = f"pose_estimation/results/train/{opts_fname}"
     os.makedirs(output_dir, exist_ok=False)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
