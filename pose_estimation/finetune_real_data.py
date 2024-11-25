@@ -17,7 +17,7 @@ import wandb
 from manotorch.manolayer import ManoLayer
 from real_data_loader import RealGTDataset
 
-wandb.init(project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data/wandb")
+wandb.init(project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"device: {device}")
