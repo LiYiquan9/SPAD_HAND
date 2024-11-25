@@ -1,0 +1,5 @@
+test_data_type: sim # either real or sim
+
+checkpoint_path: pose_estimation/results/train/2024-11-22_10-38-49/model_199.pth
+
+eval_dataset_path: data/DART/DART_hist_data_500000_shape_rot_trans_sampling_11_22.npz

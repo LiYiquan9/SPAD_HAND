@@ -1,95 +1,73 @@
+import argparse
 import datetime
 import json
 import logging
 import os
-import time
 
 import numpy as np
 import torch
-from data_loader import CustomDataset
+import yaml
 from model import MANOEstimator
 from torch import nn, optim
 from torch.optim import lr_scheduler
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from utils import axis_angle_to_6d, rot_6d_to_axis_angle
 
 import wandb
 from manotorch.manolayer import ManoLayer
+from sim_data_loader import SimDataset
 
 wandb.init(project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 print(f"device: {device}")
 
-batch_size = 2048
 
-num_cameras = 8
-
-trainset = CustomDataset("train")
-
-trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
-
-testset = CustomDataset("test")
-
-testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
-
-all_hists_train = trainset.x_data
-
-MEAN = torch.tensor([all_hists_train.mean()]).cuda()
-STD = torch.tensor([all_hists_train.std()]).cuda()
-
-mean_np = MEAN.cpu().numpy()
-std_np = STD.cpu().numpy()
-
-# Save MEAN and STD in an .npz file
-np.savez("data/mean_std_data.npz", mean=mean_np, std=std_np)
-
-
-def normalize_hists(hists):
-
-    return (hists - MEAN) / (STD + 3e-9)
-
-
-# Model
-mano_estimator = MANOEstimator(device=device, num_cameras=num_cameras, rot_type="6d")
-
-optimizer = optim.Adam(mano_estimator.parameters(), lr=1e-4)
-
-scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
-
-criterion = nn.SmoothL1Loss()
-
-l1_metrics = nn.L1Loss()
-
-mano_layer = ManoLayer(mano_assets_root="SPAD-Hand-Sim/data/", flat_hand_mean=False).cuda()
-
-
-# Training loop
 def train(
-    model,
-    trainloader,
-    testloader,
-    optimizer,
-    criterion,
-    scheduler,
+    dset_path,
+    output_dir,
     epochs,
+    batch_size,
+    num_cameras,
+    save_model_interval,
     rot_type="aa",
-    save_model_interval=25,
 ):
 
     start_time = datetime.datetime.now()
-    utc_time = start_time.strftime("%Y-%m-%d_%H-%M-%S")
-    os.makedirs(f"pose_estimation/results/train/{utc_time}")
 
     logging.basicConfig(
-        filename=f"pose_estimation/results/train/{utc_time}/training_log.log",
+        filename=f"{output_dir}/training_log.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         filemode="w",
     )
 
+    # Set up dataset
+    trainset = SimDataset(dset_path, "train")
+    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
+    testset = SimDataset(dset_path, "test")
+    testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
+    all_hists_train = trainset.x_data
+
+    # Set up model
+    model = MANOEstimator(device=device, num_cameras=num_cameras, rot_type="6d")
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1)
+    criterion = nn.SmoothL1Loss()
+    l1_metrics = nn.L1Loss()
+    mano_layer = ManoLayer(mano_assets_root="SPAD-Hand-Sim/data/", flat_hand_mean=False).cuda()
     model.to(device)
+
+    # get mean and std for normalization
+    MEAN = torch.tensor([all_hists_train.mean()]).cuda()
+    STD = torch.tensor([all_hists_train.std()]).cuda()
+    mean_np = MEAN.cpu().numpy()
+    std_np = STD.cpu().numpy()
+    # Save MEAN and STD in an .npz file
+    np.savez("data/mean_std_data.npz", mean=mean_np, std=std_np)
+
+    def normalize_hists(hists):
+        return (hists - MEAN) / (STD + 3e-9)
 
     epoch_data = []
 
@@ -312,26 +290,49 @@ def train(
                 epoch_data.append(data)
 
         if (epoch + 1) % save_model_interval == 0:
-            model_save_path = f"pose_estimation/results/train/{utc_time}/model_{epoch}.pth"
-            torch.save(mano_estimator.state_dict(), model_save_path)
+            model_save_path = f"{output_dir}/model_{epoch}.pth"
+            torch.save(model.state_dict(), model_save_path)
             logging.info(f"Model state dictionary saved to {model_save_path}")
 
-            with open(
-                f"pose_estimation/results/train/{utc_time}/model_output_data_{epoch}.json", "w"
-            ) as f:
+            with open(f"{output_dir}/model_output_data_{epoch}.json", "w") as f:
                 json.dump(epoch_data, f, indent=4)
+
+    # save the final model as model_final.pth
+    model_save_path = f"{output_dir}/model_final.pth"
+    torch.save(model.state_dict(), model_save_path)
+    logging.info(f"Final model state dictionary saved to {model_save_path}")
+    with open(f"{output_dir}/model_output_data_final.json", "w") as f:
+        json.dump(epoch_data, f, indent=4)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train a pose estimation model")
+    parser.add_argument(
+        "-o",
+        "--opts",
+        type=str,
+        help="Path to YAML file containing training options",
+        required=True,
+    )
+    args = parser.parse_args()
+
+    # Open and read in opts YAML file
+    with open(args.opts, "r") as f:
+        opts = yaml.safe_load(f)
+
+    # Create output directory and copy yaml tile to it
+    start_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    output_dir = f"pose_estimation/results/train/{start_time}"
+    os.makedirs(output_dir, exist_ok=False)
+    with open(f"{output_dir}/opts.yaml", "w") as f:
+        yaml.dump(opts, f)
 
     train(
-        mano_estimator,
-        trainloader,
-        testloader,
-        optimizer,
-        criterion,
-        scheduler,
-        epochs=200,
-        rot_type="6d",
-        save_model_interval=50,
+        opts["dset_path"],
+        output_dir,
+        epochs=opts["epochs"],
+        batch_size=opts["batch_size"],
+        num_cameras=opts["num_cameras"],
+        save_model_interval=opts["save_model_interval"],
+        rot_type=opts["rot_type"]
     )

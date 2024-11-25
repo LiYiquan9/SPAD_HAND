@@ -1,0 +1,7 @@
+batch_size: 2048
+dset_path: data/DART/DART_hist_data_500000_shape_rot_trans_sampling_11_22.npz
+dset_type: sim
+epochs: 200
+num_cameras: 8
+rot_type: 6d
+save_model_interval: 50

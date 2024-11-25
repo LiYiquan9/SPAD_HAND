@@ -8,3 +8,4 @@ wandb/
 *.pyc
 data/real_data/
 results/
+.vscode/

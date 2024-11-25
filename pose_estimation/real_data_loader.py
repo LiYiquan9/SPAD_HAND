@@ -10,38 +10,34 @@ import os
 
 
 class RealGTDataset(Dataset):
-    def __init__(self, set="test",num_cameras=8):
+    def __init__(self, dset_paths, set="test", num_cameras=8):
         self.set = set
         self.path = ""
         self.x_data = []
         self.labels = []
         self.num_cameras = num_cameras
-        
-        dataset_path_list = [
-            "data/real_data/captures/2024-10-23_carter_250",
-            # "data/real_data/2024-10-30_casey_250"
-        ]
-        
-        for dataset_path in dataset_path_list:
+        self.dset_paths = dset_paths
+
+        for dataset_path in self.dset_paths:
             labels_path = f"{dataset_path}/gt/labels_corrected.json"
-            
-            with open(labels_path, 'r') as file:
+
+            with open(labels_path, "r") as file:
                 label_data = json.load(file)
 
             hists_dataset_path = f"{dataset_path}/tof"
-            
+
             if self.set == "test":
-                for j in range(0,50):
+                for j in range(0, 50):
                     if not os.path.exists(f"{hists_dataset_path}/{(j+1):06d}.json"):
                         continue
-                    
+
                     hists = json.load(open(f"{hists_dataset_path}/{(j+1):06d}.json"))
 
                     hists_target = []
                     for i in range(1, 9):
                         response = np.array(hists[str(i)]["hists"][0][1:]).astype(np.float64)
                         response = np.sum(response, axis=0)  # combine 9 sub-cameras
-                        response /= (int(1500e3 * 9)*1.0)
+                        response /= int(1500e3 * 9) * 1.0
                         hists_target.append(torch.tensor(response))
                     sensor_data = torch.stack(hists_target).cpu().numpy()
 
@@ -49,53 +45,87 @@ class RealGTDataset(Dataset):
 
                     j_string = f"{j+1:06d}"
 
-                    mano_params_pose = (torch.from_numpy(np.array(label_data[j_string]['pose_aa']))).reshape(1,45).cpu().numpy()
-                    mano_params_shape = torch.tensor(label_data[j_string]['shape']).reshape(1,10).cpu().numpy()
-                    global_trans = torch.tensor(label_data[j_string]['hand_transl']).reshape(1,3).cpu().numpy()
-                    global_rot = torch.from_numpy(np.array(label_data[j_string]['wrist_aa']).reshape(1, 3)).cpu().numpy()
-                    
-                    mano_params = np.concatenate([mano_params_pose,mano_params_shape, global_trans,global_rot],axis=1)
-                    
+                    mano_params_pose = (
+                        (torch.from_numpy(np.array(label_data[j_string]["pose_aa"])))
+                        .reshape(1, 45)
+                        .cpu()
+                        .numpy()
+                    )
+                    mano_params_shape = (
+                        torch.tensor(label_data[j_string]["shape"]).reshape(1, 10).cpu().numpy()
+                    )
+                    global_trans = (
+                        torch.tensor(label_data[j_string]["hand_transl"])
+                        .reshape(1, 3)
+                        .cpu()
+                        .numpy()
+                    )
+                    global_rot = (
+                        torch.from_numpy(np.array(label_data[j_string]["wrist_aa"]).reshape(1, 3))
+                        .cpu()
+                        .numpy()
+                    )
+
+                    mano_params = np.concatenate(
+                        [mano_params_pose, mano_params_shape, global_trans, global_rot], axis=1
+                    )
+
                     self.labels.append(mano_params)
-                
+
             else:
-                for j in range(50,250):
-                    
+                for j in range(50, 250):
+
                     if not os.path.exists(f"{hists_dataset_path}/{(j+1):06d}.json"):
                         continue
-    
+
                     hists = json.load(open(f"{hists_dataset_path}/{(j+1):06d}.json"))
 
                     hists_target = []
                     for i in range(1, 9):
                         response = np.array(hists[str(i)]["hists"][0][1:]).astype(np.float64)
                         response = np.sum(response, axis=0)  # combine 9 sub-cameras
-                        response /= (int(1500e3 * 9)*1.0)
+                        response /= int(1500e3 * 9) * 1.0
                         hists_target.append(torch.tensor(response))
                     sensor_data = torch.stack(hists_target).cpu().numpy()
 
                     self.x_data.append(sensor_data)
-   
+
                     j_string = f"{j+1:06d}"
-                    mano_params_pose = (torch.from_numpy(np.array(label_data[j_string]['pose_aa']))).reshape(1,45).cpu().numpy()
-                    mano_params_shape = torch.tensor(label_data[j_string]['shape']).reshape(1,10).cpu().numpy()
-                    global_trans = torch.tensor(label_data[j_string]['hand_transl']).reshape(1,3).cpu().numpy()
-                    global_rot = torch.from_numpy(np.array(label_data[j_string]['wrist_aa']).reshape(1, 3)).cpu().numpy()
-                    
-                    mano_params = np.concatenate([mano_params_pose,mano_params_shape, global_trans,global_rot],axis=1)
-                    
+                    mano_params_pose = (
+                        (torch.from_numpy(np.array(label_data[j_string]["pose_aa"])))
+                        .reshape(1, 45)
+                        .cpu()
+                        .numpy()
+                    )
+                    mano_params_shape = (
+                        torch.tensor(label_data[j_string]["shape"]).reshape(1, 10).cpu().numpy()
+                    )
+                    global_trans = (
+                        torch.tensor(label_data[j_string]["hand_transl"])
+                        .reshape(1, 3)
+                        .cpu()
+                        .numpy()
+                    )
+                    global_rot = (
+                        torch.from_numpy(np.array(label_data[j_string]["wrist_aa"]).reshape(1, 3))
+                        .cpu()
+                        .numpy()
+                    )
+
+                    mano_params = np.concatenate(
+                        [mano_params_pose, mano_params_shape, global_trans, global_rot], axis=1
+                    )
+
                     self.labels.append(mano_params)
 
-        self.x_data = np.array(self.x_data)[:,:,:64]
-        self.labels = np.array(self.labels)[:,0,:]
-        
+        self.x_data = np.array(self.x_data)[:, :, :64]
+        self.labels = np.array(self.labels)[:, 0, :]
+
     def __len__(self):
         if self.set == "test":
-            return 50 # 100-2
+            return 50  # 100-2
         else:
-            return 200 # 400-8
+            return 200  # 400-8
 
-    
     def __getitem__(self, idx):
         return self.x_data[idx], self.labels[idx]
-
