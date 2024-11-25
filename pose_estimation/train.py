@@ -43,7 +43,7 @@ mean_np = MEAN.cpu().numpy()
 std_np = STD.cpu().numpy()
 
 # Save MEAN and STD in an .npz file
-np.savez("mean_std_data.npz", mean=mean_np, std=std_np)
+np.savez("data/mean_std_data.npz", mean=mean_np, std=std_np)
 
 
 def normalize_hists(hists):

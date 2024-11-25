@@ -1,5 +1,5 @@
 data_path: path_to_impulse_response.npz
-jitter_path: jitter.npz
+jitter_path: data/jitter.npz
 
 fwhm: 5
 power: 1

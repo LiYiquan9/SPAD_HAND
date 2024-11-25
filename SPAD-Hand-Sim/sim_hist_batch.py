@@ -41,7 +41,7 @@ spad_layer = SPADHistNV(
     cube_mode=False,
 )
 
-data = np.load("DART/DART_pose_data.npz")
+data = np.load("data/DART/DART_pose_data.npz")
 mano_data =  torch.from_numpy(data['pose']).cuda() 
 
 mano_data = mano_data[:500000,...]
@@ -84,6 +84,6 @@ hist_arr = np.stack(hist_arr)
 shape_arr = np.stack(shape_arr)
 trans_arr = np.stack(trans_arr)
 
-np.savez('DART/DART_hist_data_1000000_shape_rot_trans_sampling_11_10.npz', pose=pose_arr, hist=hist_arr, shape=shape_arr, hand_trans=trans_arr, hand_rot=rot_arr)
+np.savez('data/DART/DART_hist_data_1000000_shape_rot_trans_sampling_11_10.npz', pose=pose_arr, hist=hist_arr, shape=shape_arr, hand_trans=trans_arr, hand_rot=rot_arr)
 
 

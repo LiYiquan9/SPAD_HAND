@@ -1,10 +1,10 @@
-DART/
+data/DART/
 MANO/
 nvdiffrast/
-mean_std_data.npz
+data/mean_std_data.npz
 pose_estimation/results/
 wandb/
 **/__pycache__/
 *.pyc
-real_data/
+data/real_data/
 results/

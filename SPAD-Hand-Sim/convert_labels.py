@@ -21,7 +21,7 @@ mano_layer  = spad_layer.mano_layer
 
 results = []
 for i in range(250):
-    label = json.load(open("/real_data/2024-10-30_casey_250/gt/labels.json"))[
+    label = json.load(open("data/real_data/2024-10-30_casey_250/gt/labels.json"))[
         "{:06d}".format(i + 1)
     ]
     pose_l = torch.tensor(label["mano_pose"]).float().cuda().unsqueeze(0)
@@ -69,4 +69,4 @@ for i in range(250):
     # hj_meshes = Mesh.concatenate_meshes([hand_mesh, spad_layer.camera_meshes])
     # hj_meshes.show()
 
-open("/real_data/2024-10-30_casey_250/250_mano.json", "w").write(json.dumps(results))
+open("data/real_data/2024-10-30_casey_250/250_mano.json", "w").write(json.dumps(results))

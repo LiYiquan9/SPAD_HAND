@@ -31,7 +31,7 @@ testset = RealGTDataset("test")
 
 testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
 
-data = np.load('mean_std_data.npz')
+data = np.load('data/mean_std_data.npz')
 
 mean_loaded = data['mean']
 std_loaded = data['std']

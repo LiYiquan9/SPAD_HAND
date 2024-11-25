@@ -18,8 +18,8 @@ class RealGTDataset(Dataset):
         self.num_cameras = num_cameras
         
         dataset_path_list = [
-            "real_data/captures/2024-10-23_carter_250",
-            # "real_data/2024-10-30_casey_250"
+            "data/real_data/captures/2024-10-23_carter_250",
+            # "data/real_data/2024-10-30_casey_250"
         ]
         
         for dataset_path in dataset_path_list:

@@ -77,7 +77,7 @@ def save_hist_img(data):
     plt.tight_layout()
     plt.savefig('SPAD-Hand-Sim/hist0.png')
     
-data = np.load("DART/DART_pose_data.npz")
+data = np.load("data/DART/DART_pose_data.npz")
 mano_data =  torch.from_numpy(data['pose']).cuda() 
 
 mano_data = mano_data[:100000,...]

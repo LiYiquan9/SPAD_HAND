@@ -1,11 +1,8 @@
 ## Prepare data
 
- - [MANO](https://github.com/otaheri/MANO) go for this repo and download mano model data
- - I download the model in path: MANO/mano_v1_2/models/MANO_LEFT.pkl
- <!-- - [FreiHAND](https://lmb.informatik.uni-freiburg.de/projects/freihand/) go for this website and download hand dataset
- - I download the dataset in path: FreiHAND_dataset/mano, I then store the mesh in FreiHAND_dataset/mesh and simulated histograms in FreiHAND_dataset/simulation
- - I prepared a example data for simulated hists based on hand mesh data in FreiHAND: [simulated_hists](https://drive.google.com/file/d/1k7VrNyP7q7CQ2-1AlsigkLZFGM5-vggZ/view?usp=drive_link) -->
-- Prepare DART pose data in DART/DART_pose_data.npz (in google drive)
+- [MANO](https://github.com/otaheri/MANO) go for this repo and download mano model data
+- I download the model in path: MANO/mano_v1_2/models/MANO_LEFT.pkl
+- Prepare DART pose data in DART/DART_pose_data.npz (in google drive). Place DART_pose_data.npz in data/DART/DART_pose_data.npz
 
 
 
@@ -51,7 +48,7 @@ from numpy import bool, int, float, complex, object, unicode
 
 ## (On ThinkPad only) set up symbolic link to real-world data
 ```sh
-ln -s ~/projects/SPAD-Hand-Pose-Capture/data/captures real_data
+ln -s ~/projects/SPAD-Hand-Pose-Capture/data/captures data/real_data
 ```
 
 ## Generate simulation data

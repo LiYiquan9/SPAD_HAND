@@ -6,7 +6,7 @@ camera:
   num_bins: 128
 data_path: experiments/impulse_response.npz
 fwhm: 5
-jitter_path: jitter.npz
+jitter_path: data/jitter.npz
 light:
   fov: 60
   is_area: false
