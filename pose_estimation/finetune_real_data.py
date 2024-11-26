@@ -71,7 +71,8 @@ def train(
     l1_metrics = nn.L1Loss()
     mano_layer = ManoLayer(mano_assets_root="SPAD-Hand-Sim/data", flat_hand_mean=False).cuda()
 
-    model.load_state_dict(torch.load(checkpoint_path))
+    if checkpoint_path is not None:
+        model.load_state_dict(torch.load(checkpoint_path))
 
     model.to(device)
 
