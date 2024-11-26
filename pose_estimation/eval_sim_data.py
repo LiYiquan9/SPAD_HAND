@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     # Create output directory and copy yaml tile to it
     output_dir = f"pose_estimation/results/eval/{opts_fname}"
-    os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 

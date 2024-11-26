@@ -17,7 +17,9 @@ import wandb
 from manotorch.manolayer import ManoLayer
 from real_data_loader import RealGTDataset
 
-wandb.init(project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data")
+wandb.init(
+    project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data"
+)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"device: {device}")
@@ -330,7 +332,7 @@ if __name__ == "__main__":
 
     # Create output directory and copy yaml tile to it
     output_dir = f"pose_estimation/results/train/{opts_fname}"
-    os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
@@ -342,5 +344,5 @@ if __name__ == "__main__":
         batch_size=opts["batch_size"],
         num_cameras=opts["num_cameras"],
         save_model_interval=opts["save_model_interval"],
-        rot_type=opts["rot_type"]
+        rot_type=opts["rot_type"],
     )

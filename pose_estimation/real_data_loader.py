@@ -70,6 +70,9 @@ class RealGTDataset(Dataset):
                         [mano_params_pose, mano_params_shape, global_trans, global_rot], axis=1
                     )
 
+                    # in the labels, idxs 0-44 are pose_aa, 45-54 are shape, 55-57 are global 
+                    # translation, 58-60 are global rotation
+
                     self.labels.append(mano_params)
 
             else:
@@ -122,10 +125,7 @@ class RealGTDataset(Dataset):
         self.labels = np.array(self.labels)[:, 0, :]
 
     def __len__(self):
-        if self.set == "test":
-            return 50  # 100-2
-        else:
-            return 200  # 400-8
+        return self.x_data.shape[0]
 
     def __getitem__(self, idx):
         return self.x_data[idx], self.labels[idx]

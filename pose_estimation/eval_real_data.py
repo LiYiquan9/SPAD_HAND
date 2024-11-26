@@ -38,7 +38,7 @@ def eval(
     output_dir,
     rot_type,
 ):
-    
+
     assert rot_type == "6d", "Only 6d rotation type is supported"
 
     logging.basicConfig(
@@ -76,7 +76,7 @@ def eval(
             f5mm_sum, f15mm_sum = 0.0, 0.0
             total_count = 0
 
-            for _, (x, y) in enumerate(data_loader):
+            for x, y in data_loader:
 
                 batch_size = x.size(0)
                 x = torch.tensor(x).float().to(device)
@@ -103,7 +103,6 @@ def eval(
                 outputs_rot = rot_6d_to_axis_angle(outputs_rot_6d.reshape(-1, 6)).reshape(
                     outputs.shape[0], 3
                 )
-
 
                 # pose_pred = torch.cat([outputs_rot, outputs_pose], dim=1)
                 # vertices_pred = (mano_layer(pose_pred, outputs_shape).verts + outputs_trans.unsqueeze(1)).reshape(outputs_pose.shape[0],-1)
@@ -195,12 +194,96 @@ def eval(
                 "F@15mm": float(avg_f15mm),
             }
 
+    # As a baseline, guess the average of the train set for each sample, and evaluate performance
+    baseline_metrics = guess_avg_baseline(trainset, testset)
+    results["guess_avg_baseline_on_test"] = baseline_metrics
+
     # Save results to JSON
     with open(f"{output_dir}/results.json", "w") as f:
         json.dump(results, f, indent=4)
 
     with open(f"{output_dir}/model_output_data.json", "w") as f:
         json.dump(raw_data, f, indent=4)
+
+
+def guess_avg_baseline(trainset: RealGTDataset, testset: RealGTDataset) -> dict:
+    """
+    Calculate baseline results (mpvpe, etc) by guessing the average of the train set for each sample
+    in the test set
+
+    Args:
+        trainset (RealGTDataset): training dataset
+        testset (RealGTDataset): test dataset
+
+    Returns:
+        dict: dictionary of metrics (mpvpe, mpjpe, pa_mpvpe, pa_mpjpe, f@5mm, f@15mm)
+    """
+
+    batch_size = 16
+    test_loader = DataLoader(testset, batch_size=batch_size, shuffle=False)
+    mano_layer = ManoLayer(mano_assets_root="SPAD-Hand-Sim/data", flat_hand_mean=False).cuda()
+
+    # calculate the average of
+    avg_train_y = torch.tensor(trainset.labels).mean(dim=0).to(device)
+    metrics = {
+        "mpvpe": [],
+        "mpjpe": [],
+        "pa_mpvpe": [],
+        "pa_mpjpe": [],
+        "f@5mm": [],
+        "f@15mm": [],
+    }
+
+    for _, y in test_loader:
+
+        # in y, idxs 0-44 are pose_aa, 45-54 are shape, 55-57 are global translation,
+        # 58-60 are global rotation
+        # extract the various components from the ground truth labels
+        y = torch.tensor(y).float().to(device)  # (batch_size, 61)
+        y_pose = y[..., :45]
+        y_shape = y[..., 45:55]
+        y_trans = y[..., 55:58]
+        y_rot = y[..., 58:61]
+
+        # get vertices and joints of the ground truth
+        pose_gt = torch.cat([y_rot, y_pose], dim=1)  # (batch_size, 48)
+        vertices_gt = (mano_layer(pose_gt, y_shape).verts + y_trans.unsqueeze(1)).reshape(
+            y_pose.shape[0], -1
+        )  # (batch_size, 2334)
+        joint_gt = (mano_layer(pose_gt, y_shape).joints + y_trans.unsqueeze(1)).reshape(
+            y_pose.shape[0], -1
+        )  # (batch_size, 63)
+
+        # get vertices and joints from the average train set
+        outputs_pose = avg_train_y[:45].unsqueeze(0).repeat(y_pose.shape[0], 1).float().to(device)
+        pose_pred = torch.cat([y_rot, outputs_pose], dim=1)
+        vertices_pred = (mano_layer(pose_pred, y_shape).verts + y_trans.unsqueeze(1)).reshape(
+            outputs_pose.shape[0], -1
+        )
+        joint_pred = (mano_layer(pose_pred, y_shape).joints + y_trans.unsqueeze(1)).reshape(
+            outputs_pose.shape[0], -1
+        )
+
+        mpvpe, pa_mpvpe = eval_pose(
+            (vertices_pred).reshape(-1, 778, 3), (vertices_gt).reshape(-1, 778, 3)
+        )
+        mpjpe, pa_mpjpe = eval_pose((joint_pred).reshape(-1, 21, 3), (joint_gt).reshape(-1, 21, 3))
+        f_scores = compute_f_score(
+            vertices_pred.reshape(-1, 778, 3), vertices_gt.reshape(-1, 778, 3)
+        )
+
+        metrics["mpvpe"].append(mpvpe)
+        metrics["mpjpe"].append(mpjpe)
+        metrics["pa_mpvpe"].append(pa_mpvpe)
+        metrics["pa_mpjpe"].append(pa_mpjpe)
+        metrics["f@5mm"].append(f_scores["F@5mm"])
+        metrics["f@15mm"].append(f_scores["F@15mm"])
+
+        avg_metrics = {}
+        for key, value in metrics.items():
+            avg_metrics[key] = float(np.mean(value))
+
+        return avg_metrics
 
 
 if __name__ == "__main__":
@@ -226,7 +309,7 @@ if __name__ == "__main__":
 
     # Create output directory and copy yaml tile to it
     output_dir = f"pose_estimation/results/eval/{opts_fname}"
-    os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
