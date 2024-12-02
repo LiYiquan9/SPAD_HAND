@@ -3,7 +3,7 @@
 # Installation
 
 ## Prepare data
-- Download [MANO Data](https://github.com/otaheri/MANO) and place it in MANO/mano_v1_2/models/MANO_LEFT.pkl
+- Download MANO_RIGHT.pkl and MANO_LEFT.pkl [MANO Data](https://github.com/otaheri/MANO) and place it in MANO/mano_v1_2/models/
 - Download DART_pose_data.npz from [the shared Google Drive](https://drive.google.com/file/d/1VroeUgyKbNCiTyURj4jhN9bwxdDi6SXe/view?usp=drive_link). Place it in data/DART/DART_pose_data.npz
 
 
@@ -37,6 +37,9 @@ mamba install ninja
 # now you have enough to run sim_hist_batch.py. The below is to be able to run train, eval, etc.
 cd manotorch
 pip install -e .
+# now you can run train and eval. To run demo.ipynb:
+pip install git+'https://github.com/otaheri/MANO'
+pip install "pyglet<2"
 ```
 
 If you try to run sim_hist_batch.py now, you'll get an ImportError in chumpy's code. So go to the error in your install where the error occurs, e.g. 
