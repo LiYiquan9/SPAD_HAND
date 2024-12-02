@@ -59,6 +59,9 @@ def eval(
     model.eval()
 
     # Set up dataset
+
+    # the below line is a temporary hack TODO support this through opt file
+    # trainset = RealGTDataset(["data/real_data/captures/2024-10-23_carter_250"], "train")
     trainset = RealGTDataset(eval_dataset_paths, "train")
     train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
     testset = RealGTDataset(eval_dataset_paths, "test")
@@ -173,26 +176,28 @@ def eval(
                     }
                     raw_data.append(data)
 
-            avg_mpvpe = mpvpe_sum / total_count
-            avg_mpjpe = mpjpe_sum / total_count
-            avg_pa_mpvpe = pa_mpvpe_sum / total_count
-            avg_pa_mpjpe = pa_mpjpe_sum / total_count
-            avg_f5mm = f5mm_sum / total_count
-            avg_f15mm = f15mm_sum / total_count
+            # if the split is empty, don't compute avg metrics
+            if total_count > 0:
+                avg_mpvpe = mpvpe_sum / total_count
+                avg_mpjpe = mpjpe_sum / total_count
+                avg_pa_mpvpe = pa_mpvpe_sum / total_count
+                avg_pa_mpjpe = pa_mpjpe_sum / total_count
+                avg_f5mm = f5mm_sum / total_count
+                avg_f15mm = f15mm_sum / total_count
 
-            # Log average metrics
-            logging.info(
-                f"[{split}] Total metrics: MPVPE:{avg_mpvpe:.3f} MPJPE:{avg_mpjpe:.3f} PA_MPVPE:{avg_pa_mpvpe:.3f} PA_MPJPE:{avg_pa_mpjpe:.3f} F@5mm: {avg_f5mm:.3f}, F@15mm: {avg_f15mm:.3f}"
-            )
+                # Log average metrics
+                logging.info(
+                    f"[{split}] Total metrics: MPVPE:{avg_mpvpe:.3f} MPJPE:{avg_mpjpe:.3f} PA_MPVPE:{avg_pa_mpvpe:.3f} PA_MPJPE:{avg_pa_mpjpe:.3f} F@5mm: {avg_f5mm:.3f}, F@15mm: {avg_f15mm:.3f}"
+                )
 
-            results[split] = {
-                "MPVPE": float(avg_mpvpe),
-                "MPJPE": float(avg_mpjpe),
-                "PA_MPVPE": float(avg_pa_mpvpe),
-                "PA_MPJPE": float(avg_pa_mpjpe),
-                "F@5mm": float(avg_f5mm),
-                "F@15mm": float(avg_f15mm),
-            }
+                results[split] = {
+                    "MPVPE": float(avg_mpvpe),
+                    "MPJPE": float(avg_mpjpe),
+                    "PA_MPVPE": float(avg_pa_mpvpe),
+                    "PA_MPJPE": float(avg_pa_mpjpe),
+                    "F@5mm": float(avg_f5mm),
+                    "F@15mm": float(avg_f15mm),
+                }
 
     # As a baseline, guess the average of the train set for each sample, and evaluate performance
     baseline_metrics = guess_avg_baseline(trainset, testset)

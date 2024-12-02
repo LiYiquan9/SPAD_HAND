@@ -10,8 +10,8 @@ import os
 
 
 class RealGTDataset(Dataset):
-    def __init__(self, dset_paths, set="test", num_cameras=8):
-        self.set = set
+    def __init__(self, dset_paths, split="test", num_cameras=8):
+        self.split = split
         self.path = ""
         self.x_data = []
         self.labels = []
@@ -26,7 +26,7 @@ class RealGTDataset(Dataset):
 
             hists_dataset_path = f"{dataset_path}/tof"
 
-            if self.set == "test":
+            if self.split == "test":
                 for j in range(0, 50):
                     if not os.path.exists(f"{hists_dataset_path}/{(j+1):06d}.json"):
                         continue
@@ -121,8 +121,13 @@ class RealGTDataset(Dataset):
 
                     self.labels.append(mano_params)
 
-        self.x_data = np.array(self.x_data)[:, :, :64]
-        self.labels = np.array(self.labels)[:, 0, :]
+        if self.x_data == []:
+            print(f"WARNING: No data found for dataset paths {self.dset_paths}, split {self.split}")
+            self.x_data = np.array([])
+            self.labels = np.array([])
+        else:
+            self.x_data = np.array(self.x_data)[:, :, :64]
+            self.labels = np.array(self.labels)[:, 0, :]
 
     def __len__(self):
         return self.x_data.shape[0]

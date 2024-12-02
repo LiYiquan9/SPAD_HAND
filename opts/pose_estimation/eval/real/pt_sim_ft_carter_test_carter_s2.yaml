@@ -1,0 +1,6 @@
+test_data_type: real # either real or sim
+
+checkpoint_path: pose_estimation/results/train/pt_sim_ft_carter/model_final.pth
+
+eval_dataset_paths:
+  - data/real_data/captures/2024-12-02_carter_50
