@@ -164,6 +164,7 @@ def eval(
 
                 for k in range(outputs_pose.shape[0]):
                     data = {
+                        "split": split,
                         "prediction_pose": outputs_pose[k].tolist(),
                         "target_pose": y_pose[k].tolist(),
                         "prediction_shape": outputs_shape[k].tolist(),

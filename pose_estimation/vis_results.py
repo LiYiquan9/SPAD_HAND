@@ -55,6 +55,10 @@ def vis_results(eval_results_dir: str) -> None:
     # create vis directory to save visualizations
     output_dir = os.path.join(eval_results_dir, "vis")
     os.makedirs(output_dir, exist_ok=True)
+    train_output_dir = os.path.join(output_dir, "train")
+    test_output_dir = os.path.join(output_dir, "test")
+    os.makedirs(train_output_dir, exist_ok=True)
+    os.makedirs(test_output_dir, exist_ok=True)
 
     # load mano model
     mano_model = mano.load(
@@ -149,7 +153,6 @@ def vis_results(eval_results_dir: str) -> None:
             )
             final_img = np.concatenate([final_img, combined_img], axis=1)
 
-        save_path = os.path.join(output_dir, f"{sample_idx:06d}.png")
         pil_img = Image.fromarray(final_img)
 
         # add text to the combined img to label gt and pred
@@ -163,6 +166,11 @@ def vis_results(eval_results_dir: str) -> None:
             fill=(0, 0, 0, 255),
         )
 
+        if sample["split"] == "train":
+            save_path = os.path.join(train_output_dir, f"{sample_idx:06d}.png")
+        elif sample["split"] == "test":
+            save_path = os.path.join(test_output_dir, f"{sample_idx:06d}.png")
+        
         pil_img.save(save_path)
 
 
