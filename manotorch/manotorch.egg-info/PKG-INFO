@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: manotorch
+Version: 0.0.2
+Summary: MANO pyTORCH
+Home-page: https://github.com/lixiny/manotorch
+Author: Lixin Yang
+Author-email: siriusyang@sjtu.edu.cn
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: GNU GENERAL PUBLIC LICENSE
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.7.0
+Description-Content-Type: text/markdown
+License-File: LICENSE
