@@ -201,8 +201,13 @@ def eval(
                 }
 
     # As a baseline, guess the average of the train set for each sample, and evaluate performance
-    baseline_metrics = guess_avg_baseline(trainset, testset)
+    baseline_metrics, avg_output = guess_avg_baseline(trainset, testset)
     results["guess_avg_baseline_on_test"] = baseline_metrics
+
+    # add the result of guessing the average of the training data to the raw model outputs
+    for data in raw_data:
+        for k, v in avg_output.items():
+            data[k] = v
 
     # Save results to JSON
     with open(f"{output_dir}/results.json", "w") as f:
@@ -285,11 +290,18 @@ def guess_avg_baseline(trainset: RealGTDataset, testset: RealGTDataset) -> dict:
         metrics["f@5mm"].append(f_scores["F@5mm"])
         metrics["f@15mm"].append(f_scores["F@15mm"])
 
+        avg_output = {
+            "avg_train_pose": outputs_pose[0].tolist(),
+            "avg_train_shape": avg_train_y[45:55].tolist(),
+            "avg_train_trans": avg_train_y[55:58].tolist(),
+            "avg_train_rot": avg_train_y[58:61].tolist(),
+        }
+
         avg_metrics = {}
         for key, value in metrics.items():
             avg_metrics[key] = float(np.mean(value))
 
-        return avg_metrics
+        return avg_metrics, avg_output
 
 
 if __name__ == "__main__":

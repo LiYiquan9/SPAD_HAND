@@ -133,9 +133,40 @@ def vis_results(eval_results_dir: str) -> None:
             pred_scene.add_geometry(axis)
 
         """
+        Generate and create visualization for avg. ground truth baseline mesh
+        """
+        avg_train_shape = sample["avg_train_shape"]
+        avg_train_pose = sample["avg_train_pose"]
+
+        avg_train_pose = np.reshape(avg_train_pose, (45,)).astype(np.float32)
+        betas = torch.tensor(avg_train_shape).unsqueeze(0)
+        avg_train_pose = torch.tensor(avg_train_pose).unsqueeze(0)
+        global_orient = torch.tensor([0.0, 0.0, 0.0]).unsqueeze(0)
+        global_orient[0][1] += np.pi / 2
+        transl = torch.tensor([-0.1, -0.01, 0.0]).unsqueeze(0)
+
+        avg_train_output = mano_model(
+            betas=betas,
+            global_orient=global_orient,
+            hand_pose=avg_train_pose,
+            transl=transl,
+            return_verts=True,
+            return_tips=True,
+        )
+
+        avg_train_mesh = mano_model.hand_meshes(avg_train_output)[0]
+
+        avg_train_scene = trimesh.Scene(avg_train_mesh)
+
+        if SHOW_AXES:
+            # Add the XYZ axis to the scene for reference
+            axis = trimesh.creation.axis(origin_size=0.01, transform=None)
+            avg_train_scene.add_geometry(axis)
+
+        """
         Render the scenes from each viewpoint and create an image with all of them
         """
-        final_img = np.zeros((IMG_SAVE_RESOLUTION[0] * 2, 0, 4), dtype=np.uint8)
+        final_img = np.zeros((IMG_SAVE_RESOLUTION[0] * 3, 0, 4), dtype=np.uint8)
         for viewpoint in VIEWPOINTS:
             target_scene.camera_transform = viewpoint
             target_img = target_scene.save_image(resolution=IMG_SAVE_RESOLUTION)
@@ -143,11 +174,15 @@ def vis_results(eval_results_dir: str) -> None:
             pred_scene.camera_transform = viewpoint
             pred_img = pred_scene.save_image(resolution=IMG_SAVE_RESOLUTION)
 
+            avg_train_scene.camera_transform = viewpoint
+            avg_train_img = avg_train_scene.save_image(resolution=IMG_SAVE_RESOLUTION)
+
             # save pred_img and target_img side-by-side in one image file
             combined_img = np.concatenate(
                 [
                     np.array(Image.open(io.BytesIO(target_img))),
                     np.array(Image.open(io.BytesIO(pred_img))),
+                    np.array(Image.open(io.BytesIO(avg_train_img))),
                 ],
                 axis=0,
             )
@@ -165,12 +200,18 @@ def vis_results(eval_results_dir: str) -> None:
             font=font,
             fill=(0, 0, 0, 255),
         )
+        draw.text(
+            (10, IMG_SAVE_RESOLUTION[0] * 2 + 10),
+            "Avg. of Training Set",
+            font=font,
+            fill=(0, 0, 0, 255),
+        )
 
         if sample["split"] == "train":
             save_path = os.path.join(train_output_dir, f"{sample_idx:06d}.png")
         elif sample["split"] == "test":
             save_path = os.path.join(test_output_dir, f"{sample_idx:06d}.png")
-        
+
         pil_img.save(save_path)
 
 
