@@ -19,6 +19,8 @@ cd manotorch && pip install -e . && cd ..
 
 
 ## Install dependencies (Carter's version):
+**Note on why manotorch is included in this repo (not as a submodule)**: Within manotorch there is a folder called "mano", which internal manotorch code imports from with, e.g. `from mano.webuser import *`. This conflicts with the package called mano - if both are installed, manotorch fails because it can't find mano.webuser (because there is no webuser folder in the mano package). To fix this, I went into the manotorch code and changed the mano folder to `manoutil`. This resolves the issue, but now we need to use our own version of manotorch.
+
 ```sh
 mamba create -n spad_hand python=3.10
 mamba activate spad_hand
