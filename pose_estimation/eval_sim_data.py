@@ -7,7 +7,7 @@ from datetime import datetime
 import torch
 import yaml
 from model import MANOEstimator
-from sim_data_loader import SimDataset
+from data_loaders.sim_data_loader import SimDataset
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm

@@ -11,11 +11,11 @@ from model import MANOEstimator
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
-from utils import axis_angle_to_6d, rot_6d_to_axis_angle
+from utils.utils import axis_angle_to_6d, rot_6d_to_axis_angle
 
 import wandb
 from manotorch.manolayer import ManoLayer
-from sim_data_loader import SimDataset
+from data_loaders.sim_data_loader import SimDataset
 
 wandb.init(
     project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data"

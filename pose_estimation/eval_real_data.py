@@ -7,12 +7,12 @@ from datetime import datetime
 import numpy as np
 import torch
 import yaml
-from eval_utils import compute_f_score, eval_pose
+from utils.eval_utils import compute_f_score, eval_pose
 from model import MANOEstimator
-from real_data_loader import RealGTDataset
+from data_loaders.real_data_loader import RealGTDataset
 from torch import nn
 from torch.utils.data import DataLoader
-from utils import axis_angle_to_6d, rot_6d_to_axis_angle
+from utils.utils import axis_angle_to_6d, rot_6d_to_axis_angle
 from vis_results import vis_results
 
 from manotorch.manolayer import ManoLayer
