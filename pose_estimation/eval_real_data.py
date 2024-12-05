@@ -7,12 +7,13 @@ from datetime import datetime
 import numpy as np
 import torch
 import yaml
-from real_data_loader import RealGTDataset
 from eval_utils import compute_f_score, eval_pose
 from model import MANOEstimator
+from real_data_loader import RealGTDataset
 from torch import nn
 from torch.utils.data import DataLoader
 from utils import axis_angle_to_6d, rot_6d_to_axis_angle
+from vis_results import vis_results
 
 from manotorch.manolayer import ManoLayer
 
@@ -60,9 +61,11 @@ def eval(
 
     # Set up dataset
 
-    # the below line is a temporary hack TODO support this through opt file
-    # trainset = RealGTDataset(["data/real_data/captures/2024-10-23_carter_250"], "train")
-    trainset = RealGTDataset(eval_dataset_paths, "train")
+    # the below if is a temporary hack TODO support this through opt file
+    if eval_dataset_paths == ["data/real_data/captures/2024-12-02_carter_50"]:
+        trainset = RealGTDataset(["data/real_data/captures/2024-10-23_carter_250"], "train")
+    else:
+        trainset = RealGTDataset(eval_dataset_paths, "train")
     train_loader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
     testset = RealGTDataset(eval_dataset_paths, "test")
     test_loader = DataLoader(testset, batch_size=batch_size, shuffle=False)
@@ -215,6 +218,8 @@ def eval(
 
     with open(f"{output_dir}/model_output_data.json", "w") as f:
         json.dump(raw_data, f, indent=4)
+
+    vis_results(output_dir, test_only=True)
 
 
 def guess_avg_baseline(trainset: RealGTDataset, testset: RealGTDataset) -> dict:
