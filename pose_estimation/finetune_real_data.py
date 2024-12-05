@@ -26,7 +26,7 @@ print(f"device: {device}")
 
 
 # Training loop
-def train(
+def finetune_real_data(
     dset_paths,
     checkpoint_path,
     output_dir,
@@ -337,7 +337,7 @@ if __name__ == "__main__":
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
-    train(
+    finetune_real_data(
         opts["dset_paths"],
         opts["checkpoint_path"],
         output_dir,

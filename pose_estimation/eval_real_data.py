@@ -38,6 +38,7 @@ def eval_real_data(
     eval_dataset_paths,
     output_dir,
     rot_type,
+    vis_results=True,
 ):
 
     assert rot_type == "6d", "Only 6d rotation type is supported"
@@ -219,7 +220,8 @@ def eval_real_data(
     with open(f"{output_dir}/model_output_data.json", "w") as f:
         json.dump(raw_data, f, indent=4)
 
-    vis_results(output_dir, test_only=True)
+    if vis_results:
+        vis_results(output_dir, test_only=True)
 
 
 def guess_avg_baseline(trainset: RealGTDataset, testset: RealGTDataset) -> dict:

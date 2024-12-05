@@ -25,7 +25,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"device: {device}")
 
 
-def train(
+def train_sim(
     dset_path,
     output_dir,
     epochs,
@@ -331,7 +331,7 @@ if __name__ == "__main__":
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
-    train(
+    train_sim(
         opts["dset_path"],
         output_dir,
         epochs=opts["epochs"],
