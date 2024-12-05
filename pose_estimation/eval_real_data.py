@@ -33,7 +33,7 @@ def normalize_hists(hists):
 
 
 # Evaluation
-def eval(
+def eval_real_data(
     checkpoint_path,
     eval_dataset_paths,
     output_dir,
@@ -336,4 +336,4 @@ if __name__ == "__main__":
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
-    eval(opts["checkpoint_path"], opts["eval_dataset_paths"], output_dir, rot_type="6d")
+    eval_real_data(opts["checkpoint_path"], opts["eval_dataset_paths"], output_dir, rot_type="6d")
