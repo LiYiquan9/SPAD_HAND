@@ -42,6 +42,8 @@ pip install -e .
 # now you can run train and eval. To run demo.ipynb:
 pip install git+'https://github.com/otaheri/MANO'
 pip install "pyglet<2"
+# from the root directory of the repo, run:
+pip install -e .
 ```
 
 If you try to run sim_hist_batch.py now, you'll get an ImportError in chumpy's code. So go to the error in your install where the error occurs, e.g. 

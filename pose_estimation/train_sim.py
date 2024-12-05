@@ -6,16 +6,16 @@ import os
 
 import numpy as np
 import torch
+import wandb
 import yaml
-from model import MANOEstimator
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
-from utils.utils import axis_angle_to_6d, rot_6d_to_axis_angle
 
-import wandb
 from manotorch.manolayer import ManoLayer
-from data_loaders.sim_data_loader import SimDataset
+from pose_estimation.data_loaders.sim_data_loader import SimDataset
+from pose_estimation.model import MANOEstimator
+from pose_estimation.utils.utils import axis_angle_to_6d, rot_6d_to_axis_angle
 
 wandb.init(
     project="spad_hand_pose_estimation", name="spad_hand_pose_estimator_training", dir="data"

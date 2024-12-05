@@ -6,11 +6,12 @@ from datetime import datetime
 
 import torch
 import yaml
-from model import MANOEstimator
-from data_loaders.sim_data_loader import SimDataset
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+from pose_estimation.data_loaders.sim_data_loader import SimDataset
+from pose_estimation.model import MANOEstimator
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"device: {device}")
