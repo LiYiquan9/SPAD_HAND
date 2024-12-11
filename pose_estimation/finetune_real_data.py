@@ -35,6 +35,7 @@ def finetune_real_data(
     num_cameras,
     save_model_interval,
     rot_type="aa",
+    subsample_train_dset_rate=1.0,
 ):
 
     start_time = datetime.datetime.now()
@@ -47,7 +48,7 @@ def finetune_real_data(
     )
 
     # Set up dataset
-    trainset = RealGTDataset(dset_paths, "train")
+    trainset = RealGTDataset(dset_paths, "train", subsample_rate=subsample_train_dset_rate)
     trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True)
     testset = RealGTDataset(dset_paths, "test")
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=True)
