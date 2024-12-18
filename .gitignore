@@ -10,3 +10,4 @@ data/real_data/
 results/
 .vscode/
 *.egg-info
+TEMP_*
