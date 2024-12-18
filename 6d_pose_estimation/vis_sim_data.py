@@ -34,6 +34,7 @@ def vis_sim_data(real_data_path):
 
     poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
 
+    # convert to format expected by MeshHist
     rotations = []
     translations = []
     for pose in poses_homog:
@@ -62,13 +63,17 @@ def vis_sim_data(real_data_path):
         forward_model(None, None, "6d_pose_estimation/results/test.png").detach().cpu().numpy()
     )
 
+    # get real histograms from real data
+    real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
+    # pool zones in real data
+    real_hists = real_hists.sum(axis=1)
+    real_hists = real_hists * 0.00000035
+
     fig, ax = plt.subplots(int(forward_model.num_cameras / 2 + 0.5), 2)
     ax = ax.flatten()
     for i in range(forward_model.num_cameras):
         ax[i].plot(rendered_hists[i], label="sim_" + str(forward_model.camera_ids[i]))
-        # plt.plot(
-        #     real_hists[i].detach().cpu().numpy(), label="real_" + str(layer.camera_ids[i])
-        # )
+        ax[i].plot(real_hists[i], label="real_" + str(forward_model.camera_ids[i]))
         plt.legend()
 
     plt.show()
