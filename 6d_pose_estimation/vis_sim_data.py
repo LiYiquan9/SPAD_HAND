@@ -14,6 +14,7 @@ from spad_mesh.sim.model import MeshHist
 
 TEMP_SCENE_MESH_PATH = "data/TEMP_scene_mesh.npz"
 TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
+CAMERA_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
 
 def vis_sim_data(real_data_path):
@@ -32,11 +33,21 @@ def vis_sim_data(real_data_path):
         tmf_data = json.load(f)
 
     poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
-    print(poses_homog)
+
+    rotations = []
+    translations = []
+    for pose in poses_homog:
+        rotation = pose[:3, :3] @ CAMERA_TF
+        rotations.append(rotation)
+        translations.append(-pose[:3, 3] @ rotation)
+
+    rotations = np.array(rotations)
+    translations = np.array(translations)
+
     np.savez(
         TEMP_SENSOR_POSES_PATH,
-        rotations=np.array([pose[:3, :3] for pose in poses_homog]),
-        translations=np.array([pose[:3, 3] for pose in poses_homog]),
+        rotations=rotations,
+        translations=translations,
         camera_ids=np.arange(len(poses_homog)),
     )
 
@@ -72,6 +83,7 @@ def homog_inv(tf: np.ndarray) -> np.ndarray:
     return np.array(
         [[*rot_inv[0], new_t[0]], [*rot_inv[1], new_t[1]], [*rot_inv[2], new_t[2]], [0, 0, 0, 1]]
     )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
