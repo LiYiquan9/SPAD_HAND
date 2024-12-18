@@ -1,0 +1,3 @@
+[submodule "SPAD-Mesh"]
+	path = SPAD-Mesh
+	url = git@github.com:adrenaline21/SPAD-Mesh.git
