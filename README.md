@@ -70,19 +70,19 @@ python SPAD-Hand-Sim/sim_hist_batch.py
 ## Train pose estimation model
 To train a model, you will need to pass an opts file as a parameter, which describes how to train the model. All opts files for training should be in `pose_estimation/results/train`. The name of the opts file is also used to label the traiing run. For example,
 ```sh
-python pose_estimation/train_sim.py -o pose_estimation/results/train/pt_sim
+python hand_pose_estimation/train_sim.py -o hand_pose_estimation/results/train/pt_sim
 ```
 
 ## Finetune pose estimation model on real data
 Again, you need to pass an opts file as a parameter. All opts files for training should be in `pose_estimation/results/train`, for example:
 ```sh
-python pose_estimation/finetune_real_data.py -o pose_estimation/results/train/pt_sim_ft_carter
+python hand_pose_estimation/finetune_real_data.py -o hand_pose_estimation/results/train/pt_sim_ft_carter
 ```
 
 ## Evaluate on real data
-An opts file is again required. If you create a new opts file, keep it in `pose_estimation/results/eval`
+An opts file is again required. If you create a new opts file, keep it in `hand_pose_estimation/results/eval`
 ```sh
-python pose_estimation/eval_real_data.py -o pose_estimation/results/eval/pt_sim_ft_carter_test_carter
+python hand_pose_estimation/eval_real_data.py -o hand_pose_estimation/results/eval/pt_sim_ft_carter_test_carter
 ```
 
 ## Calibrate hand mano parameters/camera parameters
