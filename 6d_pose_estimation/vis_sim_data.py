@@ -11,10 +11,10 @@ import numpy as np
 import trimesh
 
 from spad_mesh.sim.model import MeshHist
+from util import convert_json_to_meshhist_pose_format
 
 TEMP_SCENE_MESH_PATH = "data/TEMP_scene_mesh.npz"
 TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
-CAMERA_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
 
 def vis_sim_data(real_data_path):
@@ -27,16 +27,7 @@ def vis_sim_data(real_data_path):
 
     poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
 
-    # convert to format expected by MeshHist
-    cam_rotations = []
-    cam_translations = []
-    for pose in poses_homog:
-        rotation = pose[:3, :3] @ CAMERA_TF
-        cam_rotations.append(rotation)
-        cam_translations.append(-pose[:3, 3] @ rotation)
-
-    cam_rotations = np.array(cam_rotations)
-    cam_translations = np.array(cam_translations)
+    cam_rotations, cam_translations = convert_json_to_meshhist_pose_format(poses_homog)
 
     # create forward model for scene mesh + camera positions
     forward_model = MeshHist(

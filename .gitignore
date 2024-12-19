@@ -11,3 +11,4 @@ results/
 .vscode/
 *.egg-info
 TEMP_*
+data/sim_data
