@@ -20,13 +20,6 @@ CAMERA_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 def vis_sim_data(real_data_path):
     # load scene mesh from obj file and save in the .npz format expected by MeshHist
     scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
-    np.savez(
-        "data/TEMP_scene_mesh.npz",
-        vertices=scene_mesh.vertices,
-        faces=scene_mesh.faces,
-        face_normals=scene_mesh.face_normals,
-        vert_normals=scene_mesh.vertex_normals,
-    )
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(real_data_path, "tmf.json")) as f:
@@ -35,27 +28,29 @@ def vis_sim_data(real_data_path):
     poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
 
     # convert to format expected by MeshHist
-    rotations = []
-    translations = []
+    cam_rotations = []
+    cam_translations = []
     for pose in poses_homog:
         rotation = pose[:3, :3] @ CAMERA_TF
-        rotations.append(rotation)
-        translations.append(-pose[:3, 3] @ rotation)
+        cam_rotations.append(rotation)
+        cam_translations.append(-pose[:3, 3] @ rotation)
 
-    rotations = np.array(rotations)
-    translations = np.array(translations)
-
-    np.savez(
-        TEMP_SENSOR_POSES_PATH,
-        rotations=rotations,
-        translations=translations,
-        camera_ids=np.arange(len(poses_homog)),
-    )
+    cam_rotations = np.array(cam_rotations)
+    cam_translations = np.array(cam_translations)
 
     # create forward model for scene mesh + camera positions
     forward_model = MeshHist(
-        camera_config=TEMP_SENSOR_POSES_PATH,
-        mesh_path=TEMP_SCENE_MESH_PATH,
+        camera_config={
+            "rotations": cam_rotations,
+            "translations": cam_translations,
+            "camera_ids": np.arange(len(poses_homog)),
+        },
+        mesh_info={
+            "vertices": scene_mesh.vertices,
+            "faces": scene_mesh.faces,
+            "face_normals": scene_mesh.face_normals,
+            "vert_normals": scene_mesh.vertex_normals,
+        },
         with_bin_scaling=False,
     )
 
