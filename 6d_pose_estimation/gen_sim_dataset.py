@@ -25,6 +25,7 @@ def gen_sim_dataset(
     mesh_path: str,
     real_dataset_path: str,
     output_dir: str,
+    n_poses: int = 10000,
     gen_previews: bool = False,
     constraint: str = None,
 ) -> None:
@@ -49,7 +50,7 @@ def gen_sim_dataset(
 
     object_poses = generate_random_poses(
         center_t=avg_real_data_obj_translation,
-        n_poses=100,
+        n_poses=n_poses,
         t_ranges=TRANSLATION_RANGES,
         constraint=constraint,
         plane_params=plane_params,
@@ -264,6 +265,13 @@ if __name__ == "__main__":
         help="Path to real data from which to steal plane mesh and camera positions.",
     )
     parser.add_argument(
+        "-n",
+        "--n_poses",
+        type=int,
+        required=True,
+        help="Number of object poses to generate. Each pose takes about 1.6kb in the output file.",
+    )
+    parser.add_argument(
         "-p",
         "--previews",
         action="store_true",
@@ -279,4 +287,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    gen_sim_dataset(args.mesh_path, args.real_data_path, OUTPUT_DIR, args.previews, args.constraint)
+    gen_sim_dataset(
+        mesh_path=args.mesh_path,
+        real_dataset_path=args.real_data_path,
+        output_dir=OUTPUT_DIR,
+        n_poses=args.n_poses,
+        gen_previews=args.previews,
+        constraint=args.constraint,
+    )
