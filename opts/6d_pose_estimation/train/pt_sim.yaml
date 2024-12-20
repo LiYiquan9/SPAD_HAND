@@ -1,4 +1,4 @@
-dset_path: data/sim_data/6d_pose/2024-12-20_13-09-25/simulated_data.npz
+dset_path: data/sim_data/6d_pose/2024-12-20_object_on_surface_500/simulated_data.npz
 epochs: 200
 batch_size: 2048
 save_model_interval: 50

@@ -15,7 +15,7 @@ from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
 
 from spad_mesh.sim.model import MeshHist
 
-OUTPUT_DIR = "data/sim_data/6d_pose"
+BASE_OUTPUT_DIR = "data/sim_data/6d_pose"
 NUM_HIST_BINS = 128
 LAUNCH_TIME = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 TRANSLATION_RANGES = {"x": [-0.1, 0.1], "y": [-0.1, 0.1], "z": [-0.1, 0.1]}
@@ -30,9 +30,9 @@ def gen_sim_dataset(
     constraint: str = None,
 ) -> None:
 
-    os.makedirs(os.path.join(output_dir, LAUNCH_TIME), exist_ok=True)
+    os.makedirs(os.path.join(output_dir), exist_ok=True)
     if gen_previews:
-        os.makedirs(os.path.join(output_dir, LAUNCH_TIME, "previews"), exist_ok=True)
+        os.makedirs(os.path.join(output_dir, "previews"), exist_ok=True)
 
     # load plane model, mesh, and object mesh
     plane_mesh = trimesh.load(os.path.join(real_dataset_path, "001", "gt", "plane.obj"))
@@ -89,7 +89,7 @@ def gen_sim_dataset(
         # render histograms
         if gen_previews:
             image_output_path = os.path.join(
-                output_dir, LAUNCH_TIME, "previews", f"{object_pose_idx:08d}_render.png"
+                output_dir, "previews", f"{object_pose_idx:08d}_render.png"
             )
         else:
             image_output_path = None
@@ -109,29 +109,23 @@ def gen_sim_dataset(
                 )
                 ax[subplot_idx].legend()
             fig.tight_layout()
-            fig.savefig(
-                os.path.join(
-                    output_dir, LAUNCH_TIME, "previews", f"{object_pose_idx:08d}_hists.png"
-                )
-            )
+            fig.savefig(os.path.join(output_dir, "previews", f"{object_pose_idx:08d}_hists.png"))
             plt.close(fig)
 
             # save the scene mesh
             scene_mesh.export(
-                os.path.join(
-                    output_dir, LAUNCH_TIME, "previews", f"{object_pose_idx:08d}_scene.obj"
-                )
+                os.path.join(output_dir, "previews", f"{object_pose_idx:08d}_scene.obj")
             )
 
     # save simulated data
     np.savez(
-        os.path.join(output_dir, LAUNCH_TIME, "simulated_data.npz"),
+        os.path.join(output_dir, "simulated_data.npz"),
         histograms=all_rendered_hists,
         object_poses=object_poses,
     )
 
     # save metadata about the simulation
-    with open(os.path.join(output_dir, LAUNCH_TIME, "metadata.json"), "w") as f:
+    with open(os.path.join(output_dir, "metadata.json"), "w") as f:
         json.dump(
             {
                 "object_mesh": mesh_path,
@@ -141,8 +135,12 @@ def gen_sim_dataset(
                 "launch_time": LAUNCH_TIME,
                 "n_object_poses": len(object_poses),
                 "n_camera_poses": len(poses_homog),
+                "translation_ranges": TRANSLATION_RANGES,
+                "constraint": constraint,
+                "plane_params": plane_params,
             },
             f,
+            indent=4,
         )
 
 
@@ -285,12 +283,15 @@ if __name__ == "__main__":
         default="none",
         help="Constraint for object poses.",
     )
-
     args = parser.parse_args()
+
+    date = datetime.datetime.now().strftime("%Y-%m-%d")
+    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}")
+
     gen_sim_dataset(
         mesh_path=args.mesh_path,
         real_dataset_path=args.real_data_path,
-        output_dir=OUTPUT_DIR,
+        output_dir=output_dir,
         n_poses=args.n_poses,
         gen_previews=args.previews,
         constraint=args.constraint,
