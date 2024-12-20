@@ -333,7 +333,7 @@ if __name__ == "__main__":
     assert opts["test_data_type"] == "real", "Data type must be real for this script"
 
     # Create output directory and copy yaml tile to it
-    output_dir = f"pose_estimation/results/eval/{opts_fname}"
+    output_dir = f"hand_pose_estimation/results/eval/{opts_fname}"
     os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)

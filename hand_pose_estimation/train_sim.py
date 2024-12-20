@@ -326,7 +326,7 @@ if __name__ == "__main__":
         opts = yaml.safe_load(f)
 
     # Create output directory and copy yaml tile to it
-    output_dir = f"pose_estimation/results/train/{opts_fname}"
+    output_dir = f"hand_pose_estimation/results/train/{opts_fname}"
     os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
