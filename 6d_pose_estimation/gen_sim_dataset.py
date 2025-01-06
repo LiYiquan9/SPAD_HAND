@@ -11,6 +11,7 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
+import yaml
 from tqdm import tqdm
 from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
 
@@ -19,9 +20,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from spad_mesh.sim.model import MeshHist
 
 BASE_OUTPUT_DIR = "data/sim_data/6d_pose"
-NUM_HIST_BINS = 128
 LAUNCH_TIME = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-TRANSLATION_RANGES = {"x": [-0.1, 0.1], "y": [-0.1, 0.1], "z": [-0.1, 0.1]}
 
 
 def sim_data_adjustment(histograms: np.ndarray) -> np.ndarray:
@@ -43,11 +42,31 @@ def gen_sim_dataset(
     mesh_path: str,
     real_dataset_path: str,
     output_dir: str,
-    n_poses: int = 10000,
+    num_hist_bins: int,
+    translation_ranges: dict,
+    n_obj_poses: int,
     gen_previews: bool = False,
     constraint: str = None,
     t_noise_level: float = 0.0,
 ) -> None:
+    """
+    Generate a simulated dataset for 6D pose recognition of a known mesh.
+
+    Args:
+        mesh_path: Path to the object mesh.
+        real_dataset_path: Path to the real dataset from which to steal camera and plane positions.
+        output_dir: Path to the directory where the simulated data will be saved.
+        num_hist_bins: The number of bins in the simulated histograms.
+        translation_ranges: The x, y,z ranges of the random translation. Should be a dictionary with
+            key for each axis, and 2-element list for the range for each dictionary key.
+        n_obj_poses: The number of random object poses to generate.
+        gen_previews: Whether to generate preview images of the simulated data. Not reocmmended on
+            full-size datasets.
+        constraint: The constraint for the object poses. Can be "none", "object_on_surface", or
+            "object_above_surface".
+        t_noise_level: The standard deviation of the translation noise to add to the camera
+            positions.
+    """
 
     os.makedirs(os.path.join(output_dir), exist_ok=True)
     if gen_previews:
@@ -69,15 +88,15 @@ def gen_sim_dataset(
 
     object_poses = generate_random_poses(
         center_t=avg_real_data_obj_translation,
-        n_poses=n_poses,
-        t_ranges=TRANSLATION_RANGES,
+        n_poses=n_obj_poses,
+        t_ranges=translation_ranges,
         constraint=constraint,
         plane_params=plane_params,
         obj_mesh=object_mesh,
     )
 
     # (n_object_poses, n_cameras, n_bins)
-    all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), NUM_HIST_BINS))
+    all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), num_hist_bins))
 
     for object_pose_idx, object_pose in tqdm(
         enumerate(object_poses), total=len(object_poses), desc="Generating simulated data"
@@ -103,7 +122,7 @@ def gen_sim_dataset(
                 "vert_normals": scene_mesh.vertex_normals,
             },
             with_bin_scaling=False,
-            num_bins=NUM_HIST_BINS,
+            num_bins=num_hist_bins,
         )
 
         # render histograms
@@ -154,11 +173,11 @@ def gen_sim_dataset(
                 "object_mesh": mesh_path,
                 "real_data_path": real_dataset_path,
                 "avg_real_data_obj_translation": list(avg_real_data_obj_translation),
-                "num_bins": NUM_HIST_BINS,
+                "num_hist_bins": num_hist_bins,
                 "launch_time": LAUNCH_TIME,
                 "n_object_poses": len(object_poses),
                 "n_camera_poses": len(poses_homog),
-                "translation_ranges": TRANSLATION_RANGES,
+                "translation_ranges": translation_ranges,
                 "constraint": constraint,
                 "plane_params": plane_params,
             },
@@ -280,52 +299,32 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate a simulated dataset for 6D pose recognition."
     )
-    parser.add_argument("-m", "--mesh_path", help="Path to the object mesh file.")
     parser.add_argument(
-        "--real_data_path",
-        help="Path to real data from which to steal plane mesh and camera positions.",
-    )
-    parser.add_argument(
-        "-n",
-        "--n_poses",
-        type=int,
-        required=True,
-        help="Number of object poses to generate. Each pose takes about 1.6kb in the output file.",
-    )
-    parser.add_argument(
-        "-p",
-        "--previews",
-        action="store_true",
-        help="Generate previews of the rendered data for debugging / verification",
-    )
-    parser.add_argument(
-        "-c",
-        "--constraint",
+        "-o",
+        "--opts",
         type=str,
-        choices=["object_on_surface", "object_above_surface", "none"],
-        default="none",
-        help="Constraint for object poses.",
-    )
-    parser.add_argument(
-        "-t",
-        "--t_noise",
-        type=float,
-        default=0.0,
-        help="Noise on translation.",
+        help="Path to YAML file containing training options",
+        required=True,
     )
     args = parser.parse_args()
 
-    date = datetime.datetime.now().strftime("%Y-%m-%d")
-    output_dir = os.path.join(
-        BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}_noise_preprocess"
-    )
+    # The opts filename will be used as the directory name for output
+    opts_fname = os.path.basename(args.opts).split(".")[0]
+
+    # Open and read in opts YAML file
+    with open(args.opts, "r") as f:
+        opts = yaml.safe_load(f)
+
+    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{LAUNCH_TIME}_{opts_fname}")
 
     gen_sim_dataset(
-        mesh_path=args.mesh_path,
-        real_dataset_path=args.real_data_path,
+        mesh_path=opts["mesh_path"],
+        real_dataset_path=opts["real_dataset_path"],
         output_dir=output_dir,
-        n_poses=args.n_poses,
-        gen_previews=args.previews,
-        constraint=args.constraint,
-        t_noise_level=args.t_noise,
+        num_hist_bins=opts["num_hist_bins"],
+        translation_ranges=opts["translation_ranges"],
+        n_obj_poses=opts["n_obj_poses"],
+        gen_previews=opts["gen_previews"],
+        constraint=opts["constraint"],
+        t_noise_level=opts["t_noise_level"],
     )
