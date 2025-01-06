@@ -5,14 +5,12 @@ Evaluate a 6D pose estimation model (works on real or simulated data).
 import argparse
 import datetime
 import json
-import logging
 import os
 import sys
 
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
-from pyquaternion import Quaternion
 from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -20,7 +18,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import torch
 import trimesh
-from torch import nn, optim
 from torch.utils.data import DataLoader
 
 from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
@@ -57,13 +54,6 @@ def test(
         None
     """
 
-    logging.basicConfig(
-        filename=f"{output_dir}/testing_log.log",
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        filemode="w",
-    )
-
     # load obj points
     obj_mesh = trimesh.load(obj_path)
     obj_points = obj_mesh.sample(1000)
@@ -71,94 +61,124 @@ def test(
 
     # load dataset
     test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-    testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    # calculate the average of the test dataset labels - these will be used as a baseline for 
+    # comparison (test_set_avg inference mode)
+    test_labels = []
+    for loaded_data in test_dataset:
+        if dset_type == "sim":
+            _, label = loaded_data
+        elif dset_type == "real":
+            _, label, _ = loaded_data
+        label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
+        label_translation = label[:3, 3]
+        flat_label = np.concatenate([label_ortho6d, label_translation])
+        # print(flat_label)
+        test_labels.append(torch.from_numpy(flat_label))
+    test_labels = torch.stack(test_labels).to(device)
+    test_labels_avg = torch.mean(test_labels, dim=0)
 
     print(f"Testing dataset has {len(test_dataset)} samples")
 
-    data = np.load(f"{training_path}/mean_std_data.npz")
-    MEAN = torch.tensor(data["mean"]).to(device)
-    STD = torch.tensor(data["std"]).to(device)
+    results = np.load(f"{training_path}/mean_std_data.npz")
+    MEAN = torch.tensor(results["mean"]).to(device)
+    STD = torch.tensor(results["std"]).to(device)
 
     def normalize_hists(hists):
         return (hists - MEAN) / (STD + 3e-9)
 
-    epoch_data = []
+    inference_modes = ["supervised_model", "test_set_avg"]
+    all_results = {inference_type: [] for inference_type in inference_modes}
 
     # load model
     model = PoseEstimation6DModel(device=device).to(device)
     model.load_state_dict(torch.load(f"{training_path}/model_final.pth"))
 
     # evaluate model
-
     model.eval()
 
-    for batch_idx, loaded_data in tqdm(
-        enumerate(testloader), total=len(testloader), desc="Running test data through model"
-    ):
-        if dset_type == "sim":
-            raw_input_hists, labels = loaded_data
-        elif dset_type == "real":
-            raw_input_hists, labels, filenames = loaded_data
+    for inference_mode in inference_modes:
+        for batch_idx, loaded_data in tqdm(
+            enumerate(test_loader), total=len(test_loader), desc=f"Running test data through model ({inference_mode})"
+        ):
+            if dset_type == "sim":
+                raw_input_hists, labels = loaded_data
+            elif dset_type == "real":
+                raw_input_hists, labels, filenames = loaded_data
 
-        raw_input_hists = torch.tensor(raw_input_hists).float().to(device)
-        norm_input_hists = normalize_hists(raw_input_hists).float()
-        labels = torch.tensor(labels).float().to(device)
+            raw_input_hists = torch.tensor(raw_input_hists).float().to(device)
+            norm_input_hists = normalize_hists(raw_input_hists).float()
+            labels = torch.tensor(labels).float().to(device)
 
-        outputs = model(norm_input_hists)
+            if inference_mode == "supervised_model":
+                outputs = model(norm_input_hists)
+            elif inference_mode == "test_set_avg":
+                outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
+            elif inference_mode == "supervised_and_optimize":
+                raise NotImplementedError("supervised_model_and_optimize not implemented yet")
+            
+            print(outputs.shape)
 
-        if rot_type == "6d":
-            gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
-            gt_translation = labels[:, :3, 3].reshape(labels.size(0), 3)
+            if rot_type == "6d":
+                gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
+                gt_translation = labels[:, :3, 3].reshape(labels.size(0), 3)
 
-            pred_rot_6d = outputs[:, :6]
-            pred_translation = outputs[:, 6:9]
+                pred_rot_6d = outputs[:, :6]
+                pred_translation = outputs[:, 6:9]
 
-            gt_rot_matrix = labels[:, :3, :3]
-            pred_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
+                gt_rot_matrix = labels[:, :3, :3]
+                pred_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
 
-            gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
-            pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
-        else:
-            raise Exception("support only 6d rotation type")
+                gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
+                pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
+            else:
+                raise Exception("support only 6d rotation type")
 
-        for sample_idx in range(pred_rot_6d.shape[0]):
-            data = {
-                "pred_rot_6d": pred_rot_6d[sample_idx].tolist(),
-                "gt_rot_6d": gt_rot_6d[sample_idx].tolist(),
-                "pred_translation": pred_translation[sample_idx].tolist(),
-                "gt_translation": gt_translation[sample_idx].tolist(),
-                "filename": filenames[sample_idx] if dset_type == "real" else "",
-                "batch": batch_idx,
-                "dataset": "test",
-                "dataset_type": dset_type,
-                "hists": raw_input_hists[sample_idx].tolist(),
-            }
+            for sample_idx in range(pred_rot_6d.shape[0]):
+                results = {
+                    "pred_rot_6d": pred_rot_6d[sample_idx].tolist(),
+                    "gt_rot_6d": gt_rot_6d[sample_idx].tolist(),
+                    "pred_translation": pred_translation[sample_idx].tolist(),
+                    "gt_translation": gt_translation[sample_idx].tolist(),
+                    "filename": filenames[sample_idx] if dset_type == "real" else "",
+                    "batch": batch_idx,
+                    "dataset": "test",
+                    "dataset_type": dset_type,
+                    "hists": raw_input_hists[sample_idx].tolist(),
+                }
 
-            pred_metrics = get_pred_metrics(
-                pred_rot_6d[sample_idx],
-                gt_rot_6d[sample_idx],
-                pred_translation[sample_idx],
-                gt_translation[sample_idx],
-                gt_obj_pcd[sample_idx],
-                pred_obj_pcd[sample_idx],
-            )
+                pred_metrics = get_pred_metrics(
+                    pred_rot_6d[sample_idx],
+                    gt_rot_6d[sample_idx],
+                    pred_translation[sample_idx],
+                    gt_translation[sample_idx],
+                    gt_obj_pcd[sample_idx],
+                    pred_obj_pcd[sample_idx],
+                )
 
-            data.update(pred_metrics)  # add metrics to data
+                results.update(pred_metrics)  # add metrics to data
 
-            epoch_data.append(data)
+                all_results[inference_mode].append(results)
+
+    print(all_results.keys())
 
     # calculate average of metrics and save to file
-    avg_metrics = {
-        metric: np.mean([data[metric] for data in epoch_data]) for metric in pred_metrics.keys()
-    }
+    avg_metrics = {}
+    for inference_mode in inference_modes:
+        avg_metrics[inference_mode] = {}
+        for metric in pred_metrics.keys():
+            avg_metrics[inference_mode][metric] = np.mean(
+                [data[metric] for data in all_results[inference_mode]]
+            )
+
     with open(f"{output_dir}/avg_metrics.json", "w") as f:
         json.dump(avg_metrics, f, indent=4)
 
     # save model output data
     print("Saving model predictions to json...")
     with open(f"{output_dir}/model_predictions.json", "w") as f:
-        json.dump(epoch_data, f, indent=4)
+        json.dump(all_results, f, indent=4)
 
 
 def get_pred_metrics(
@@ -209,13 +229,12 @@ def get_pred_metrics(
     # https://math.stackexchange.com/q/2113634
     def get_angle(mat_1, mat_2):
         rot = np.dot(mat_1, mat_2.T)
-        cos_theta = (np.trace(rot)-1)/2
+        cos_theta = (np.trace(rot) - 1) / 2
         return np.rad2deg(np.arccos(cos_theta))
-    
+
     pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d).detach().cpu().numpy()
     gt_rot_matrix = rotation_6d_to_matrix(gt_rot_6d).detach().cpu().numpy()
     rotation_error = float(get_angle(pred_rot_matrix, gt_rot_matrix))
-
 
     return {
         "ADD": ADD,
