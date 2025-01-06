@@ -9,9 +9,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
+from util import convert_json_to_meshhist_pose_format
 
 from spad_mesh.sim.model import MeshHist
-from util import convert_json_to_meshhist_pose_format
 
 TEMP_SCENE_MESH_PATH = "data/TEMP_scene_mesh.npz"
 TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"

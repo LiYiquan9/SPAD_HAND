@@ -6,6 +6,7 @@ import argparse
 import datetime
 import json
 import os
+import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +14,6 @@ import trimesh
 from tqdm import tqdm
 from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
 
-import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spad_mesh.sim.model import MeshHist
@@ -22,6 +22,7 @@ BASE_OUTPUT_DIR = "data/sim_data/6d_pose"
 NUM_HIST_BINS = 128
 LAUNCH_TIME = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 TRANSLATION_RANGES = {"x": [-0.1, 0.1], "y": [-0.1, 0.1], "z": [-0.1, 0.1]}
+
 
 def sim_data_adjustment(histograms: np.ndarray) -> np.ndarray:
     """
@@ -34,7 +35,7 @@ def sim_data_adjustment(histograms: np.ndarray) -> np.ndarray:
         The adjusted histograms.
     """
     histograms = np.roll(histograms, shift=1, axis=1)
-    
+
     return histograms
 
 
@@ -114,12 +115,10 @@ def gen_sim_dataset(
             image_output_path = None
 
         # modify hists to make it close to real hists
-        rendered_hist = (
-            forward_model(None, None, image_output_path).detach().cpu().numpy()
-        )
+        rendered_hist = forward_model(None, None, image_output_path).detach().cpu().numpy()
         # rendered_hist = np.roll(rendered_hist, shift=1, axis=1)
         rendered_hist = sim_data_adjustment(rendered_hist)
-        
+
         all_rendered_hists[object_pose_idx, :, :] = rendered_hist
 
         if gen_previews:
@@ -281,11 +280,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate a simulated dataset for 6D pose recognition."
     )
-    parser.add_argument(
-        "-m",
-        "--mesh_path",
-        help="Path to the object mesh file."
-    )
+    parser.add_argument("-m", "--mesh_path", help="Path to the object mesh file.")
     parser.add_argument(
         "--real_data_path",
         help="Path to real data from which to steal plane mesh and camera positions.",
@@ -321,7 +316,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     date = datetime.datetime.now().strftime("%Y-%m-%d")
-    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}_noise_preprocess")
+    output_dir = os.path.join(
+        BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}_noise_preprocess"
+    )
 
     gen_sim_dataset(
         mesh_path=args.mesh_path,

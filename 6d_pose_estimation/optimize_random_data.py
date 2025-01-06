@@ -14,18 +14,22 @@ import torch.nn.functional as F
 from tqdm import trange
 
 import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from spad_mesh.sim.model import MeshHist
 from util import convert_json_to_meshhist_pose_format
 from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
-def optimize_pose(real_data_path: str, 
-                  obj_path: str,
-                  rot_noise: float=0.3,
-                  trans_noise: float=0.05,
-                  opt_steps: int=2000) -> None:
-    
+
+def optimize_pose(
+    real_data_path: str,
+    obj_path: str,
+    rot_noise: float = 0.3,
+    trans_noise: float = 0.05,
+    opt_steps: int = 2000,
+) -> None:
+
     scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
@@ -60,26 +64,31 @@ def optimize_pose(real_data_path: str,
     real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
     # pool zones in real data
     real_hists = real_hists.sum(axis=1)
-    real_hists = real_hists * 0.00000035 - 0.0006 # background light subtraction
+    real_hists = real_hists * 0.00000035 - 0.0006  # background light subtraction
     real_hists = torch.from_numpy(real_hists).float().cuda()
-    
+
     rendered_hists = np.roll(rendered_hists, shift=1, axis=1)
     rendered_hists = torch.from_numpy(rendered_hists).float().cuda()
 
     # generate sim data to be optimized
     plane_mesh = trimesh.load(f"{real_data_path}/gt/plane.obj")
-    
-    object_mesh = trimesh.load(obj_path)
-    
-    gt_pose = np.load(os.path.join(real_data_path, "gt", "gt_pose.npy"))
-    gt_translation = torch.from_numpy(gt_pose[:3,3]).float().cuda()
 
-    gt_rotation = matrix_to_rotation_6d(torch.from_numpy(gt_pose[:3,:3])).resize(2,3).float().cuda()
+    object_mesh = trimesh.load(obj_path)
+
+    gt_pose = np.load(os.path.join(real_data_path, "gt", "gt_pose.npy"))
+    gt_translation = torch.from_numpy(gt_pose[:3, 3]).float().cuda()
+
+    gt_rotation = (
+        matrix_to_rotation_6d(torch.from_numpy(gt_pose[:3, :3])).resize(2, 3).float().cuda()
+    )
     rotation = gt_rotation + torch.randn_like(gt_rotation) * rot_noise
     rotation = F.normalize(rotation.view(-1), dim=0).view(2, 3)
 
-    translation = torch.from_numpy(gt_pose[:3,3] 
-                    + np.random.randn(*gt_pose[:3,3].shape) * trans_noise).float().cuda()
+    translation = (
+        torch.from_numpy(gt_pose[:3, 3] + np.random.randn(*gt_pose[:3, 3].shape) * trans_noise)
+        .float()
+        .cuda()
+    )
 
     init_rotation = rotation.clone()
     init_translation = translation.clone()
@@ -107,9 +116,13 @@ def optimize_pose(real_data_path: str,
         with_bin_scaling=False,
     )
 
-    hists_before = layer(rotation, translation, "results/verify_optimization/before.png").detach().cpu().numpy()
+    hists_before = (
+        layer(rotation, translation, "results/verify_optimization/before.png")
+        .detach()
+        .cpu()
+        .numpy()
+    )
     hists_before = np.roll(hists_before, shift=1, axis=1)
-
 
     translation.requires_grad = True
     rotation.requires_grad = True
@@ -131,7 +144,9 @@ def optimize_pose(real_data_path: str,
         loss.backward()
         optimizer.step()
 
-    hists_after = layer(rotation, translation, "results/verify_optimization/after.png").detach().cpu().numpy()
+    hists_after = (
+        layer(rotation, translation, "results/verify_optimization/after.png").detach().cpu().numpy()
+    )
     hists_after = np.roll(hists_after, shift=1, axis=1)
 
     print("opt rotation: ", rotation)
@@ -158,8 +173,8 @@ def optimize_pose(real_data_path: str,
 
     # Assign colors to the meshes
     init_mesh.visual.vertex_colors = [255, 0, 0, 255]  # Red
-    opt_mesh.visual.vertex_colors = [0, 0, 255, 255]   # Blue
-    gt_mesh.visual.vertex_colors = [0, 255, 0, 255]   # Green
+    opt_mesh.visual.vertex_colors = [0, 0, 255, 255]  # Blue
+    gt_mesh.visual.vertex_colors = [0, 255, 0, 255]  # Green
 
     # Combine the meshes
     combined_mesh = trimesh.util.concatenate([init_mesh, opt_mesh, gt_mesh])
@@ -180,9 +195,7 @@ def optimize_pose(real_data_path: str,
         # ax[i].plot(
         #     rendered_hists[i].detach().cpu().numpy(), label="gt_sim"
         # )
-        ax[i].plot(
-            real_hists[i].detach().cpu().numpy(), label="gt_real"
-        )
+        ax[i].plot(real_hists[i].detach().cpu().numpy(), label="gt_real")
         ax[i].plot(hists_after[i], label="after")
         plt.legend()
 

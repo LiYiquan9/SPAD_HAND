@@ -1,13 +1,15 @@
-from torch.utils.data import DataLoader, Dataset
+import json
+import os
+
 import numpy as np
 import torch
-import os
-import json
+from torch.utils.data import DataLoader, Dataset
 
 RANDOM_SPLIT_SEED = 0
 
+
 class PoseEstimation6DDataset(Dataset):
-    def __init__(self, dset_path: str, split: str, test_portion: float=0.2) -> None:
+    def __init__(self, dset_path: str, split: str, test_portion: float = 0.2) -> None:
         """
         Dataset for 6D pose estimation. Input is a set of histograms, output is a 6D pose.
 
@@ -41,21 +43,24 @@ class PoseEstimation6DDataset(Dataset):
 
             for capture_folder in os.listdir(dset_path):
                 # TODO: the first 6 real data can fit well, but the rest will have one histogram that does not match, need to check
-    
+
                 with open(os.path.join(dset_path, capture_folder, "tmf.json"), "r") as f:
                     tmf_data = json.load(f)
-              
-                this_capture_histograms = np.array([m["hists"] for m in tmf_data]).sum(axis=1)[None, :] * 0.00000035 - 0.0006
-                
-                gt_pose_data = np.load(os.path.join(dset_path, capture_folder, "gt","gt_pose.npy"))
-                this_capture_poses =  gt_pose_data[None, :]
+
+                this_capture_histograms = (
+                    np.array([m["hists"] for m in tmf_data]).sum(axis=1)[None, :] * 0.00000035
+                    - 0.0006
+                )
+
+                gt_pose_data = np.load(os.path.join(dset_path, capture_folder, "gt", "gt_pose.npy"))
+                this_capture_poses = gt_pose_data[None, :]
 
                 self.histograms.append(this_capture_histograms)
                 self.object_poses.append(this_capture_poses)
                 self.filenames.append(capture_folder)
 
-            self.histograms = np.concatenate(self.histograms, axis=0) 
-            self.object_poses = np.concatenate(self.object_poses, axis=0) 
+            self.histograms = np.concatenate(self.histograms, axis=0)
+            self.object_poses = np.concatenate(self.object_poses, axis=0)
 
         # select data according to split
         # set the random seed for reproducibility
@@ -69,7 +74,7 @@ class PoseEstimation6DDataset(Dataset):
 
         # remove background noise
         self.histograms[self.histograms < 1e-4] = 0
-        
+
         # normalize within each histograms
         means = self.histograms.mean(axis=-1, keepdims=True)
         stds = self.histograms.std(axis=-1, keepdims=True)
@@ -81,13 +86,12 @@ class PoseEstimation6DDataset(Dataset):
         elif self.split == "test":
             self.histograms = self.histograms[test_indices]
             self.object_poses = self.object_poses[test_indices]
-            
+
         if self.data_type == "real":
             if self.split == "train":
                 self.filenames = [self.filenames[i] for i in train_indices]
             elif self.split == "test":
                 self.filenames = [self.filenames[i] for i in test_indices]
-  
 
     def __len__(self) -> int:
         return self.histograms.shape[0]

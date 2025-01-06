@@ -1,9 +1,13 @@
 from typing import List, Tuple
+
 import numpy as np
 
 JSON_TO_MESHHIST_CAM_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
-def convert_json_to_meshhist_pose_format(poses_homog: List[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+
+def convert_json_to_meshhist_pose_format(
+    poses_homog: List[np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Convert from the camera pose format in real-world json files to the format used by MeshHist.
 
@@ -11,7 +15,7 @@ def convert_json_to_meshhist_pose_format(poses_homog: List[np.ndarray]) -> Tuple
         poses_homog: A list of 4x4 homogenous camera poses, from the real-world json file.
 
     Returns:
-        Tuple of two numpy arrays: 
+        Tuple of two numpy arrays:
         - cam_rotations: A numpy array of shape (num_cameras, 3, 3) containing the rotation matrices
             for each camera.
         - cam_translations: A numpy array of shape (num_cameras, 3) containing the translation
@@ -28,6 +32,7 @@ def convert_json_to_meshhist_pose_format(poses_homog: List[np.ndarray]) -> Tuple
     cam_translations = np.array(cam_translations)
 
     return cam_rotations, cam_translations
+
 
 def get_random_rot_matrix(num_samples) -> np.ndarray:
     """
@@ -54,6 +59,7 @@ def get_random_rot_matrix(num_samples) -> np.ndarray:
     psi = np.interp(u, cdf_psi, t, left=0, right=np.pi)
 
     return rot3x3_from_axis_angle(z, psi)
+
 
 def rot3x3_from_axis_angle(axis_vector: np.ndarray, angle: np.ndarray) -> np.ndarray:
     """
