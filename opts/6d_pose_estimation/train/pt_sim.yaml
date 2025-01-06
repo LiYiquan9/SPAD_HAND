@@ -1,15 +1,8 @@
-dset_path: data/sim_data/6d_pose/2024-12-25_object_on_surface_50000_noise_preprocess/simulated_data.npz
+dset_path: data/sim_data/6d_pose/two_50000/simulated_data.npz
 epochs: 1000
 batch_size: 2048
 save_model_interval: 50
 rot_type: 6d
 obj_path: data/obj_meshes/two.stl
 check_real: True
-real_path: data/two_16_poses_real
-
-
-
-
-
-
-
+real_path: data/real_data/6d_pose/two_16_poses

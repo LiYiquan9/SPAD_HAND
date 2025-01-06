@@ -315,7 +315,7 @@ if __name__ == "__main__":
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
 
-    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{LAUNCH_TIME}_{opts_fname}")
+    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{opts_fname}")
 
     gen_sim_dataset(
         mesh_path=opts["mesh_path"],

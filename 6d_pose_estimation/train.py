@@ -59,8 +59,8 @@ def train(
         test_interval (int): How often to test the model
         rot_type (str): Type of rotation representation to use
         obj_path (str): Path to the object mesh
-        check_real (bool): Whether to check the model on real data
-        real_path (str): Path to the real data
+        check_real (bool): Whether to check the model on real data during training
+        real_path (str): Path to the real data, if check_real is True
 
     Returns:
         None

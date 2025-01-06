@@ -29,6 +29,8 @@ class PoseEstimation6DDataset(Dataset):
             self.data_type = "sim"
         elif os.path.isdir(dset_path):
             self.data_type = "real"
+        else:
+            raise ValueError(f"Invalid dataset path {dset_path}")
 
         if self.data_type == "sim":
             with open(dset_path, "rb") as f:
@@ -41,7 +43,9 @@ class PoseEstimation6DDataset(Dataset):
             self.object_poses = []
             self.filenames = []
 
-            for capture_folder in os.listdir(dset_path):
+            capture_folders = [f for f in os.listdir(dset_path) if os.path.isdir(os.path.join(dset_path, f))]
+
+            for capture_folder in capture_folders:
                 # TODO: the first 6 real data can fit well, but the rest will have one histogram that does not match, need to check
 
                 with open(os.path.join(dset_path, capture_folder, "tmf.json"), "r") as f:
