@@ -12,6 +12,7 @@ import sys
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
+from pyquaternion import Quaternion
 from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -37,7 +38,6 @@ def test(
     training_path: str,
     noise_level: float = 0.00,
     rot_type: str = "6d",
-    save_opt: bool = False,
     obj_path: str = "",
 ) -> None:
     """
@@ -51,7 +51,6 @@ def test(
         training_path (str): Path to the directory containing the trained model
         noise_level (float): Noise level to add to the input data
         rot_type (str): Type of rotation representation to use
-        save_opt (bool): Whether to save the data for optimization
         obj_path (str): Path to the object mesh file
 
     Returns:
@@ -90,78 +89,140 @@ def test(
     model = PoseEstimation6DModel(device=device).to(device)
     model.load_state_dict(torch.load(f"{training_path}/model_final.pth"))
 
-    l1_loss = nn.L1Loss()
-    l2_loss = nn.MSELoss()
-
     # evaluate model
-    total_batches = 1.0 * (len(testloader))
-    with tqdm(total=total_batches, desc="Total Progress", unit="batch") as pbar:
 
-        model.eval()
+    model.eval()
 
-        for batch_idx, loaded_data in enumerate(testloader):
-            if dset_type == "sim":
-                ori_hists, labels = loaded_data
-            elif dset_type == "real":
-                ori_hists, labels, filenames = loaded_data
+    for batch_idx, loaded_data in tqdm(
+        enumerate(testloader), total=len(testloader), desc="Running test data through model"
+    ):
+        if dset_type == "sim":
+            raw_input_hists, labels = loaded_data
+        elif dset_type == "real":
+            raw_input_hists, labels, filenames = loaded_data
 
-            ori_hists = torch.tensor(ori_hists).float().to(device)
-            hists = normalize_hists(ori_hists).float()
-            labels = torch.tensor(labels).float().to(device)
+        raw_input_hists = torch.tensor(raw_input_hists).float().to(device)
+        norm_input_hists = normalize_hists(raw_input_hists).float()
+        labels = torch.tensor(labels).float().to(device)
 
-            outputs = model(hists)
+        outputs = model(norm_input_hists)
 
-            if rot_type == "6d":
-                labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
-                labels_trans = labels[:, :3, 3].reshape(labels.size(0), 3)
+        if rot_type == "6d":
+            gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
+            gt_translation = labels[:, :3, 3].reshape(labels.size(0), 3)
 
-                outputs_rot_6d = outputs[:, :6]
-                outputs_trans = outputs[:, 6:9]
+            pred_rot_6d = outputs[:, :6]
+            pred_translation = outputs[:, 6:9]
 
-                labels_rot_matrix = labels[:, :3, :3]
-                outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
+            gt_rot_matrix = labels[:, :3, :3]
+            pred_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
 
-                labels_obj_pc = torch.matmul(obj_points, labels_rot_matrix.transpose(1, 2))
-                outputs_obj_pc = torch.matmul(obj_points, outputs_rot_matrix.transpose(1, 2))
-            else:
-                raise Exception("support only 6d rotation type")
+            gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
+            pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
+        else:
+            raise Exception("support only 6d rotation type")
 
-            rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-            # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
-            trans_loss = l1_loss(outputs_trans, labels_trans)
-            pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
+        for sample_idx in range(pred_rot_6d.shape[0]):
+            data = {
+                "pred_rot_6d": pred_rot_6d[sample_idx].tolist(),
+                "gt_rot_6d": gt_rot_6d[sample_idx].tolist(),
+                "pred_translation": pred_translation[sample_idx].tolist(),
+                "gt_translation": gt_translation[sample_idx].tolist(),
+                "filename": filenames[sample_idx] if dset_type == "real" else "",
+                "batch": batch_idx,
+                "dataset": "test",
+                "dataset_type": dset_type,
+                "hists": raw_input_hists[sample_idx].tolist(),
+            }
 
-            loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
+            pred_metrics = get_pred_metrics(
+                pred_rot_6d[sample_idx],
+                gt_rot_6d[sample_idx],
+                pred_translation[sample_idx],
+                gt_translation[sample_idx],
+                gt_obj_pcd[sample_idx],
+                pred_obj_pcd[sample_idx],
+            )
 
-            for k in range(outputs_rot_6d.size()[0]):
-                data = {
-                    "prediction_rot_6d": outputs_rot_6d[k].tolist(),
-                    "target_rot_6d": labels_rot_6d[k].tolist(),
-                    "prediction_trans": outputs_trans[k].tolist(),
-                    "target_trans": labels_trans[k].tolist(),
-                    "filename": filenames[k] if dset_type == "real" else "",
-                    "batch": batch_idx,
-                    "dataset": "test",
-                    "dataset_type": dset_type,
-                }
-                if save_opt:
-                    data["hists"] = ori_hists[k].tolist()
+            data.update(pred_metrics)  # add metrics to data
 
             epoch_data.append(data)
 
-            # Update progress bar
-            pbar.update(1)
-            pbar.set_postfix(
-                epoch=1,
-                test_loss=loss.item(),
-                rot_loss=rot_loss.item(),
-                pc_loss=pc_loss.item(),
-                trans_loss=trans_loss.item(),
-            )
+    # calculate average of metrics and save to file
+    avg_metrics = {
+        metric: np.mean([data[metric] for data in epoch_data]) for metric in pred_metrics.keys()
+    }
+    with open(f"{output_dir}/avg_metrics.json", "w") as f:
+        json.dump(avg_metrics, f, indent=4)
 
     # save model output data
-    with open(f"{output_dir}/model_output_data_final.json", "w") as f:
+    print("Saving model predictions to json...")
+    with open(f"{output_dir}/model_predictions.json", "w") as f:
         json.dump(epoch_data, f, indent=4)
+
+
+def get_pred_metrics(
+    pred_rot_6d: torch.Tensor,
+    gt_rot_6d: torch.Tensor,
+    pred_translation: torch.Tensor,
+    gt_translation: torch.Tensor,
+    gt_obj_pcd: torch.Tensor,
+    pred_obj_pcd: torch.Tensor,
+):
+    """
+    Get prediction metrics (e.g. rotation error, translation error, ADD) for a single sample
+
+    Args:
+        pred_rot_6d (torch.Tensor): Predicted 6D rotation
+        gt_rot_6d (torch.Tensor): Ground truth 6D rotation
+        pred_translation (torch.Tensor): Predicted translation
+        gt_translation (torch.Tensor): Ground truth translation
+        gt_obj_pcd (torch.Tensor): Ground truth object point cloud
+        pred_obj_pcd (torch.Tensor): Predicted object point cloud
+
+    Returns:
+        dict: Dictionary containing the prediction metrics:
+            ADD: Average distance between paired points on the ground truth and predicted model,
+                as used in PoseCNN, FoundationPose, etc. Not valid for symmetric objects.
+            ADD-S: Symmetric version of ADD which uses the closest point distance rather than
+                matching pairs of points. Valid for symmetric (and non-) objects.
+            translation_error: Euclidean distance between the predicted and ground truth
+                translations
+            rotation_error: Angular distance between the predicted and ground truth rotations.
+                Find the axis-angle representation of the rotation difference and take the angle.
+    """
+
+    ADD = torch.mean(torch.norm(gt_obj_pcd - pred_obj_pcd, dim=1)).item()
+
+    # TODO the vectorized verison of ADD-S uses a ton of memory but this looped version is really
+    # slow
+    # point_distances = []
+    # for point_idx in range(gt_obj_pcd.shape[0]):
+    #     point_distances.append(
+    #         torch.norm(gt_obj_pcd[point_idx] - pred_obj_pcd, dim=1).min().item()
+    #     )
+    # ADD_S = np.mean(point_distances)
+
+    translation_error = torch.norm(gt_translation - pred_translation).item()
+
+    # rotation error
+    # https://math.stackexchange.com/q/2113634
+    def get_angle(mat_1, mat_2):
+        rot = np.dot(mat_1, mat_2.T)
+        cos_theta = (np.trace(rot)-1)/2
+        return np.rad2deg(np.arccos(cos_theta))
+    
+    pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d).detach().cpu().numpy()
+    gt_rot_matrix = rotation_6d_to_matrix(gt_rot_6d).detach().cpu().numpy()
+    rotation_error = float(get_angle(pred_rot_matrix, gt_rot_matrix))
+
+
+    return {
+        "ADD": ADD,
+        # "ADD-S": ADD_S,
+        "translation_error": translation_error,
+        "rotation_error": rotation_error,
+    }
 
 
 if __name__ == "__main__":
@@ -195,6 +256,5 @@ if __name__ == "__main__":
         training_path=opts["training_path"],
         batch_size=opts["batch_size"],
         rot_type=opts["rot_type"],
-        save_opt=opts["save_opt"],
         obj_path=opts["obj_path"],
     )
