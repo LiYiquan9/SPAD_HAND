@@ -1,0 +1,8 @@
+dset_path: /home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/two_16_poses_real
+training_path: /home/yiquan/spad_hand_carter/SPAD_HAND__Carter/6d_pose_estimation/results/train/pt_sim_2025-01-06 02:25:14.550593
+batch_size: 2048
+rot_type: 6d
+checkpoint_path: /home/yiquan/spad_hand_carter/SPAD_HAND__Carter/6d_pose_estimation/results/train/pt_sim_2025-01-06 02:25:14.550593/model_final.pth
+save_opt: True
+obj_path: /home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/obj_meshes/two.stl
+

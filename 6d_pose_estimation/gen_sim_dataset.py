@@ -13,12 +13,29 @@ import trimesh
 from tqdm import tqdm
 from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from spad_mesh.sim.model import MeshHist
 
 BASE_OUTPUT_DIR = "data/sim_data/6d_pose"
 NUM_HIST_BINS = 128
 LAUNCH_TIME = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 TRANSLATION_RANGES = {"x": [-0.1, 0.1], "y": [-0.1, 0.1], "z": [-0.1, 0.1]}
+
+def sim_data_adjustment(histograms: np.ndarray) -> np.ndarray:
+    """
+    Adjust the histograms from sim data to make them more similar to the real data.
+
+    Args:
+        histograms: The histograms from sim data.
+
+    Returns:
+        The adjusted histograms.
+    """
+    histograms = np.roll(histograms, shift=1, axis=1)
+    
+    return histograms
 
 
 def gen_sim_dataset(
@@ -28,6 +45,7 @@ def gen_sim_dataset(
     n_poses: int = 10000,
     gen_previews: bool = False,
     constraint: str = None,
+    t_noise_level: float = 0.0,
 ) -> None:
 
     os.makedirs(os.path.join(output_dir), exist_ok=True)
@@ -70,10 +88,11 @@ def gen_sim_dataset(
         scene_mesh = trimesh.util.concatenate([plane_mesh, transformed_object_mesh])
 
         # create forward model for scene mesh + camera positions
+        t_noise = np.random.randn(*cam_translations.shape) * t_noise_level
         forward_model = MeshHist(
             camera_config={
                 "rotations": cam_rotations,
-                "translations": cam_translations,
+                "translations": cam_translations + t_noise,
                 "camera_ids": np.arange(len(poses_homog)),
             },
             mesh_info={
@@ -94,9 +113,14 @@ def gen_sim_dataset(
         else:
             image_output_path = None
 
-        all_rendered_hists[object_pose_idx, :, :] = (
+        # modify hists to make it close to real hists
+        rendered_hist = (
             forward_model(None, None, image_output_path).detach().cpu().numpy()
         )
+        # rendered_hist = np.roll(rendered_hist, shift=1, axis=1)
+        rendered_hist = sim_data_adjustment(rendered_hist)
+        
+        all_rendered_hists[object_pose_idx, :, :] = rendered_hist
 
         if gen_previews:
             # plot histograms and save it
@@ -257,7 +281,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate a simulated dataset for 6D pose recognition."
     )
-    parser.add_argument("-m", "--mesh_path", help="Path to the object mesh file.")
+    parser.add_argument(
+        "-m",
+        "--mesh_path",
+        help="Path to the object mesh file."
+    )
     parser.add_argument(
         "--real_data_path",
         help="Path to real data from which to steal plane mesh and camera positions.",
@@ -283,10 +311,17 @@ if __name__ == "__main__":
         default="none",
         help="Constraint for object poses.",
     )
+    parser.add_argument(
+        "-t",
+        "--t_noise",
+        type=float,
+        default=0.0,
+        help="Noise on translation.",
+    )
     args = parser.parse_args()
 
     date = datetime.datetime.now().strftime("%Y-%m-%d")
-    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}")
+    output_dir = os.path.join(BASE_OUTPUT_DIR, f"{date}_{args.constraint}_{args.n_poses}_noise_preprocess")
 
     gen_sim_dataset(
         mesh_path=args.mesh_path,
@@ -295,4 +330,5 @@ if __name__ == "__main__":
         n_poses=args.n_poses,
         gen_previews=args.previews,
         constraint=args.constraint,
+        t_noise_level=args.t_noise,
     )
