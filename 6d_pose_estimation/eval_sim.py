@@ -73,7 +73,7 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(dset_path, split="test")
+    test_dataset = PoseEstimation6DDataset(dset_path, dset_type="sim", split="test")
 
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
@@ -185,8 +185,11 @@ if __name__ == "__main__":
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
 
+    if opts['dset_type'] != 'sim':
+        raise ValueError("dset_type in opts file != 'sim'; this script is for simulated data only")
+
     # Create output directory and copy yaml tile to it
-    output_dir = f"results/eval_sim/{opts_fname}_{start_time}"
+    output_dir = f"6d_pose_estimation/results/eval_sim/{opts_fname}"
     os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)

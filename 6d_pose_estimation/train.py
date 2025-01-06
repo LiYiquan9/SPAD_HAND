@@ -23,8 +23,7 @@ from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
 wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
@@ -35,6 +34,7 @@ start_time = datetime.datetime.now()
 
 def train(
     dset_path: str,
+    dset_type: str,
     output_dir: str,
     epochs: int,
     batch_size: int,
@@ -51,6 +51,7 @@ def train(
 
     Args:
         dset_path (str): Path to the dataset
+        dset_type (str): Type of the dataset. Must be "real" or "sim"
         output_dir (str): Directory to save model checkpoints and logs
         epochs (int): Number of epochs to train for
         batch_size (int): Batch size
@@ -79,14 +80,16 @@ def train(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    train_dataset = PoseEstimation6DDataset(dset_path, split="train")
-    test_dataset = PoseEstimation6DDataset(dset_path, split="test")
+    train_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="train")
+    test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
 
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     if check_real:
-        real_test_dataset = PoseEstimation6DDataset(real_path, split="test", test_portion=1.0)
+        real_test_dataset = PoseEstimation6DDataset(
+            real_path, dset_type="real", split="test", test_portion=1.0
+        )
         real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
     print(f"Training dataset has {len(train_dataset)} samples")
@@ -360,6 +363,7 @@ if __name__ == "__main__":
 
     train(
         opts["dset_path"],
+        opts["dset_type"],
         output_dir,
         epochs=opts["epochs"],
         batch_size=opts["batch_size"],

@@ -1,8 +1,0 @@
-dset_path: data/two_16_poses_real
-training_path: 6d_pose_estimation/results/train/pt_sim_2025-01-06 02:25:14.550593
-batch_size: 2048
-rot_type: 6d
-checkpoint_path: 6d_pose_estimation/results/train/pt_sim_2025-01-06 02:25:14.550593/model_final.pth
-save_opt: True
-obj_path: data/obj_meshes/two.stl
-

@@ -23,8 +23,7 @@ import wandb
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
 wandb.init(
     project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_testing_real", dir="data"
@@ -75,7 +74,9 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    real_test_dataset = PoseEstimation6DDataset(dset_path, split="test", test_portion=1.0)
+    real_test_dataset = PoseEstimation6DDataset(
+        dset_path, dset_type="real", split="test", test_portion=1.0
+    )
     real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
     print(f"Testing dataset has {len(real_test_dataset)} samples")
@@ -186,6 +187,9 @@ if __name__ == "__main__":
     # Open and read in opts YAML file
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
+
+    if opts["dset_type"] != "real":
+        raise ValueError("dset_type in opts file != 'real'; this script is for real data only")
 
     # Create output directory and copy yaml tile to it
     output_dir = f"results/eval_real/{opts_fname}_{start_time}"
