@@ -1,5 +1,5 @@
 """
-Evaluate a 6D pose estimation model on simulated data.
+Evaluate a 6D pose estimation model (works on real or simulated data).
 """
 
 import argparse
@@ -19,14 +19,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import numpy as np
 import torch
 import trimesh
-import wandb
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
-
-wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_testing_sim", dir="data")
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -35,6 +31,7 @@ start_time = datetime.datetime.now()
 
 def test(
     dset_path: str,
+    dset_type: str,
     output_dir: str,
     batch_size: int,
     training_path: str,
@@ -48,6 +45,7 @@ def test(
 
     Args:
         dset_path (str): Path to the dataset
+        dset_type (str): Type of dataset, must be 'sim' or 'real'
         output_dir (str): Directory to save model checkpoints and logs
         batch_size (int): Batch size
         training_path (str): Path to the directory containing the trained model
@@ -73,7 +71,7 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(dset_path, dset_type="sim", split="test")
+    test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
 
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
@@ -100,7 +98,13 @@ def test(
     with tqdm(total=total_batches, desc="Total Progress", unit="batch") as pbar:
 
         model.eval()
-        for batch_idx, (ori_hists, labels) in enumerate(testloader):
+
+        for batch_idx, loaded_data in enumerate(testloader):
+            if dset_type == "sim":
+                ori_hists, labels = loaded_data
+            elif dset_type == "real":
+                ori_hists, labels, filenames = loaded_data
+
             ori_hists = torch.tensor(ori_hists).float().to(device)
             hists = normalize_hists(ori_hists).float()
             labels = torch.tensor(labels).float().to(device)
@@ -129,23 +133,16 @@ def test(
 
             loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
 
-            wandb.log(
-                {
-                    "test_rot_loss": rot_loss.item(),
-                    "test_trans_loss": trans_loss.item(),
-                    "test_pc_loss": pc_loss.item(),
-                    "test_total_loss": loss.item(),
-                }
-            )
-
             for k in range(outputs_rot_6d.size()[0]):
                 data = {
                     "prediction_rot_6d": outputs_rot_6d[k].tolist(),
                     "target_rot_6d": labels_rot_6d[k].tolist(),
                     "prediction_trans": outputs_trans[k].tolist(),
                     "target_trans": labels_trans[k].tolist(),
+                    "filename": filenames[k] if dset_type == "real" else "",
                     "batch": batch_idx,
                     "dataset": "test",
+                    "dataset_type": dset_type,
                 }
                 if save_opt:
                     data["hists"] = ori_hists[k].tolist()
@@ -185,17 +182,15 @@ if __name__ == "__main__":
     with open(args.opts, "r") as f:
         opts = yaml.safe_load(f)
 
-    if opts['dset_type'] != 'sim':
-        raise ValueError("dset_type in opts file != 'sim'; this script is for simulated data only")
-
     # Create output directory and copy yaml tile to it
-    output_dir = f"6d_pose_estimation/results/eval_sim/{opts_fname}"
+    output_dir = f"6d_pose_estimation/results/eval/{opts_fname}"
     os.makedirs(output_dir, exist_ok=True)
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
     test(
         opts["dset_path"],
+        opts["dset_type"],
         output_dir,
         training_path=opts["training_path"],
         batch_size=opts["batch_size"],
