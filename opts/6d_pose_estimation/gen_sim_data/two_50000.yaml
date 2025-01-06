@@ -1,10 +1,11 @@
-mesh_path: data/obj_meshes/two.stl
-real_dataset_path: data/real_data/6d_pose/two_16_poses
-n_obj_poses: 50000
-gen_previews: false
+---
 constraint: object_on_surface
-t_noise_level: 0.0
+gen_previews: false
+mesh_path: data/obj_meshes/two.stl
+n_obj_poses: 50000
 num_hist_bins: 128
+real_dataset_path: data/real_data/6d_pose/two_16_poses
+t_noise_level: 0
 translation_ranges:
   x: [-0.1, 0.1]
   y: [-0.1, 0.1]

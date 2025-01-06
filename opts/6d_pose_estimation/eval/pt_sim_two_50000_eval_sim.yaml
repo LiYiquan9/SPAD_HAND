@@ -1,7 +1,8 @@
-dset_path: data/sim_data/6d_pose/two_50000/simulated_data.npz
-training_path: 6d_pose_estimation/results/train/pt_sim_two_50000
+---
 batch_size: 2048
-rot_type: 6d
-save_opt: True
+dset_path: data/sim_data/6d_pose/two_50000/simulated_data.npz
+dset_type: sim
 obj_path: data/obj_meshes/two.stl
-dset_type: "sim"
+rot_type: 6d
+save_opt: true
+training_path: 6d_pose_estimation/results/train/pt_sim_two_50000
