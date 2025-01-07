@@ -312,6 +312,8 @@ def visualize_results(
                 gt_obj_mesh,
                 camera_poses,
                 dset_type,
+                dset_path,
+                sample_idx,
                 os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
             )
 
@@ -322,6 +324,8 @@ def render_mesh_from_viewpoints(
     gt_obj_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
     camera_poses: list,
     dset_type: str,
+    dset_path: str,
+    sample_idx: int,
     output_path: str,
 ):
     """
@@ -336,6 +340,8 @@ def render_mesh_from_viewpoints(
         camera_poses (list): List of camera poses to render the scene from. Should be in o3d
             camera convention - if they come from TMF poses, they must be converted to o3d first.
         dset_type (str): Type of dataset, must be 'sim' or 'real'
+        dset_path (str): Path to the dataset
+        sample_idx (int): Index of the sample, used to retrieve the corresponding real rgb image
         output_path (str): Path to save the rendered image. Should end in '.png'
     """
 
@@ -393,11 +399,15 @@ def render_mesh_from_viewpoints(
 
         # if using real data, also paste in the corresponding real rgb image
         if dset_type == "real":
-            pass  # TODO not yet implemented
 
-            # example code from other script
-            # rgb_image_path = os.path.join(output_dir, "realsense", "rgb", f"{frame_idx + 1:06d}.png")
-            # other_image = Image.open(rgb_image_path)
+            rgb_image_path = os.path.join(
+                dset_path, f"{sample_idx+1:03d}", "realsense", "rgb", f"{frame_idx + 1:06d}.png"
+            )
+            rgb_image = Image.open(rgb_image_path)
+            rgb_image = rgb_image.resize(
+                (window_size["width"], window_size["height"]), Image.Resampling.LANCZOS
+            )
+            full_image.paste(rgb_image, (window_size["width"], frame_idx * window_size["height"]))
 
     full_image.save(output_path)
 
