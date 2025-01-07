@@ -8,10 +8,12 @@ import json
 import os
 import sys
 
+import matplotlib.pyplot as plt
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
 from tqdm import tqdm
+import open3d as o3d
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -63,7 +65,7 @@ def test(
     test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
-    # calculate the average of the test dataset labels - these will be used as a baseline for 
+    # calculate the average of the test dataset labels - these will be used as a baseline for
     # comparison (test_set_avg inference mode)
     test_labels = []
     for loaded_data in test_dataset:
@@ -100,7 +102,9 @@ def test(
 
     for inference_mode in inference_modes:
         for batch_idx, loaded_data in tqdm(
-            enumerate(test_loader), total=len(test_loader), desc=f"Running test data through model ({inference_mode})"
+            enumerate(test_loader),
+            total=len(test_loader),
+            desc=f"Running test data through model ({inference_mode})",
         ):
             if dset_type == "sim":
                 raw_input_hists, labels = loaded_data
@@ -159,6 +163,10 @@ def test(
 
                 all_results[inference_mode].append(results)
 
+    # generate plots and visualizations for results
+    # visualize_results(all_results, os.path.join(output_dir, "visualizations"))
+    plot_metrics(all_results, os.path.join(output_dir, "plots"), pred_metrics.keys())
+
     # calculate average of metrics and save to file
     avg_metrics = {}
     for inference_mode in inference_modes:
@@ -167,7 +175,6 @@ def test(
             avg_metrics[inference_mode][metric] = np.mean(
                 [data[metric] for data in all_results[inference_mode]]
             )
-
     with open(f"{output_dir}/avg_metrics.json", "w") as f:
         json.dump(avg_metrics, f, indent=4)
 
@@ -175,6 +182,39 @@ def test(
     print("Saving model predictions to json...")
     with open(f"{output_dir}/model_predictions.json", "w") as f:
         json.dump(all_results, f, indent=4)
+
+
+def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
+    """
+    For each metric and each inference mode, plot the distribution of the metric as a histogram.
+
+    Args:
+        all_results (dict): Dictionary containing the results of the model predictions
+        output_dir (str): Directory to save the plots
+        metrics (list): List of metrics to plot
+    """
+    inference_modes = list(all_results.keys())
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for metric in metrics:
+        fig, ax = plt.subplots(1, len(inference_modes), figsize=(5 * len(inference_modes), 5))
+        subplot_idx = 0
+        for inference_mode in inference_modes:
+            metric_values = [
+                all_results[inference_mode][i][metric]
+                for i in range(len(all_results[inference_mode]))
+            ]
+            ax[subplot_idx].hist(metric_values, bins=50)
+            ax[subplot_idx].set_title(inference_mode)
+            subplot_idx += 1
+        # set all plot x limits to be the same
+        x_max = max([ax[i].get_xlim()[1] for i in range(len(inference_modes))])
+        for i in range(len(inference_modes)):
+            ax[i].set_xlim(0, x_max)
+        fig.suptitle(metric)
+        fig.tight_layout()
+        plt.savefig(os.path.join(output_dir, f"{metric}.png"))
 
 
 def get_pred_metrics(
