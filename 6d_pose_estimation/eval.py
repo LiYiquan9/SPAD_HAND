@@ -43,6 +43,7 @@ def test(
     rot_type: str = "6d",
     obj_path: str = "",
     num_samples_to_vis: int = 10,
+    test_on_split: bool = "test"
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -56,6 +57,8 @@ def test(
         noise_level (float): Noise level to add to the input data
         rot_type (str): Type of rotation representation to use
         obj_path (str): Path to the object mesh file
+        test_on_split (str): If 'test', only test on the test split of the dataset. If 'train',
+            test only on the train split. If 'all', test on the entire dataset.
 
     Returns:
         None
@@ -72,7 +75,7 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split="test")
+    test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split=test_on_split)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     # calculate the average of the test dataset labels - these will be used as a baseline for
@@ -542,4 +545,5 @@ if __name__ == "__main__":
         rot_type=opts["rot_type"],
         obj_path=opts["obj_path"],
         num_samples_to_vis=opts["num_samples_to_vis"],
+        test_on_split=opts["test_on_split"],
     )
