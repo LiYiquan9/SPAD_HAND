@@ -53,7 +53,9 @@ def vis_sim_data(real_data_path):
     real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
     # pool zones in real data
     real_hists = real_hists.sum(axis=1)
-    real_hists = real_hists * 0.00000035
+    # TODO this scaling factor was found by trial and error just to visualize the plots in a similar
+    # scale. We should find the true scaling factor or have a more systematic way to do this
+    real_hists = real_hists * 0.00000035 
 
     fig, ax = plt.subplots(int(forward_model.num_cameras / 2 + 0.5), 2)
     ax = ax.flatten()
