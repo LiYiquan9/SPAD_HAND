@@ -93,7 +93,7 @@ def test(
 
     # load model
     model = PoseEstimation6DModel(device=device).to(device)
-    model.load_state_dict(torch.load(f"{training_path}/model_final.pth"))
+    model.load_state_dict(torch.load(f"{training_path}/model_final.pth", weights_only=False))
 
     # evaluate model
     model.eval()
@@ -107,9 +107,9 @@ def test(
             elif dset_type == "real":
                 raw_input_hists, labels, filenames = loaded_data
 
-            raw_input_hists = torch.tensor(raw_input_hists).float().to(device)
+            raw_input_hists = raw_input_hists.float().to(device)
             norm_input_hists = normalize_hists(raw_input_hists).float()
-            labels = torch.tensor(labels).float().to(device)
+            labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":
                 outputs = model(norm_input_hists)
@@ -117,8 +117,6 @@ def test(
                 outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
             elif inference_mode == "supervised_and_optimize":
                 raise NotImplementedError("supervised_model_and_optimize not implemented yet")
-            
-            print(outputs.shape)
 
             if rot_type == "6d":
                 gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -145,7 +143,7 @@ def test(
                     "batch": batch_idx,
                     "dataset": "test",
                     "dataset_type": dset_type,
-                    "hists": raw_input_hists[sample_idx].tolist(),
+                    # "hists": raw_input_hists[sample_idx].tolist(),
                 }
 
                 pred_metrics = get_pred_metrics(
@@ -160,8 +158,6 @@ def test(
                 results.update(pred_metrics)  # add metrics to data
 
                 all_results[inference_mode].append(results)
-
-    print(all_results.keys())
 
     # calculate average of metrics and save to file
     avg_metrics = {}
