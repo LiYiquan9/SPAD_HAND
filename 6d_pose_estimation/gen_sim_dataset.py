@@ -180,6 +180,7 @@ def gen_sim_dataset(
                 "translation_ranges": translation_ranges,
                 "constraint": constraint,
                 "plane_params": plane_params,
+                "tmf_poses": poses_homog.tolist()
             },
             f,
             indent=4,

@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import numpy as np
+import open3d as o3d
 
 JSON_TO_MESHHIST_CAM_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
@@ -74,3 +75,53 @@ def rot3x3_from_axis_angle(axis_vector: np.ndarray, angle: np.ndarray) -> np.nda
     angle = np.atleast_1d(angle)[..., None, None]
     K = np.cross(np.eye(3), axis_vector)
     return np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * (K @ K)
+
+
+def homog_inv(tf: np.ndarray) -> np.ndarray:
+    """
+    Given some 4x4 homogenous transform, return its inverse.
+
+    Args:
+        tf: 4x4 homogenous transform
+
+    Returns:
+        4x4 homogenous transform inverse
+    """
+    rot_inv = np.linalg.inv(tf[:3, :3])
+    new_t = (-rot_inv) @ np.array([*tf[:3, 3]])
+    return np.array(
+        [[*rot_inv[0], new_t[0]], [*rot_inv[1], new_t[1]], [*rot_inv[2], new_t[2]], [0, 0, 0, 1]]
+    )
+
+
+def create_plane_mesh(
+    a: float,
+    b: float,
+    c: float,
+    d: float,
+    x_bounds: Tuple[float, float] = (-5, 5),
+    y_bounds: Tuple[float, float] = (-5, 5),
+) -> o3d.cpu.pybind.geometry.TriangleMesh:
+    """
+    Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
+
+    Assumes the mesh is not (very near to) vertical.
+    """
+
+    def get_z(x, y):
+        return (-a * x - b * y - d) / c
+
+    # create a point at each corner of the plane
+    p1 = np.array([x_bounds[0], y_bounds[0], get_z(x_bounds[0], y_bounds[0])])
+    p2 = np.array([x_bounds[0], y_bounds[1], get_z(x_bounds[0], y_bounds[1])])
+    p3 = np.array([x_bounds[1], y_bounds[1], get_z(x_bounds[1], y_bounds[1])])
+    p4 = np.array([x_bounds[1], y_bounds[0], get_z(x_bounds[1], y_bounds[0])])
+
+    # create a mesh from the points with two triangles
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector([p1, p2, p3, p4])
+    # the below vertex windings create a plane normal pointing in the positive z direction,
+    # so it is visible from above
+    mesh.triangles = o3d.utility.Vector3iVector([[0, 2, 1], [0, 3, 2]])
+
+    return mesh

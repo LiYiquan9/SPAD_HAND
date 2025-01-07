@@ -3,17 +3,21 @@ Evaluate a 6D pose estimation model (works on real or simulated data).
 """
 
 import argparse
+import copy
 import datetime
 import json
 import os
 import sys
+from typing import List, Tuple
 
 import matplotlib.pyplot as plt
+import open3d as o3d
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
+from PIL import Image
 from tqdm import tqdm
-import open3d as o3d
+from util import homog_inv, create_plane_mesh
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -38,6 +42,7 @@ def test(
     noise_level: float = 0.00,
     rot_type: str = "6d",
     obj_path: str = "",
+    num_samples_to_vis: int = 10,
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -56,13 +61,18 @@ def test(
         None
     """
 
+    if dset_type == "sim":
+        full_dset_path = os.path.join(dset_path, "simulated_data.npz")
+    else:
+        full_dset_path = dset_path
+
     # load obj points
     obj_mesh = trimesh.load(obj_path)
     obj_points = obj_mesh.sample(1000)
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
+    test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split="test")
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     # calculate the average of the test dataset labels - these will be used as a baseline for
@@ -164,7 +174,14 @@ def test(
                 all_results[inference_mode].append(results)
 
     # generate plots and visualizations for results
-    # visualize_results(all_results, os.path.join(output_dir, "visualizations"))
+    visualize_results(
+        all_results,
+        os.path.join(output_dir, "visualizations"),
+        obj_path,
+        dset_path,
+        dset_type,
+        num_samples_to_vis,
+    )
     plot_metrics(all_results, os.path.join(output_dir, "plots"), pred_metrics.keys())
 
     # calculate average of metrics and save to file
@@ -182,6 +199,209 @@ def test(
     print("Saving model predictions to json...")
     with open(f"{output_dir}/model_predictions.json", "w") as f:
         json.dump(all_results, f, indent=4)
+
+
+def visualize_results(
+    all_results: dict,
+    output_dir: str,
+    obj_mesh_path: str,
+    dset_path: str,
+    dset_type: str,
+    num_samples_to_vis: int,
+) -> None:
+    """
+    For each inference mode, visualize the predicted and ground truth poses for each sample.
+
+    Args:
+        all_results (dict): Dictionary containing the results of the model predictions
+        output_dir (str): Directory to save the visualizations
+        obj_mesh (str): Path to the target mesh obj file
+        dset_path (str): Path to the dataset
+        dset_type (str): Type of dataset, must be 'sim' or 'real'
+        num_samples_to_vis (int): Number of samples to visualize. n samples will be randomly
+            selected from the dataset.
+    """
+
+    # this camera transform can be applied on the right side to convert a camera pose from the
+    # tmf coordinate system to the o3d coordinate system.
+    # for example: o3d_frame_pose = tmf_frame_pose @ tmf_to_o3d_cam_tf
+    tmf_to_o3d_cam_tf = np.array(
+        [
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    )
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    inference_modes = list(all_results.keys())
+    mesh = o3d.io.read_triangle_mesh(obj_mesh_path)
+
+    # load in plane mesh and camera poses
+    # how this is done depends on the dataset type
+    # camera poses should be the same for all samples
+    if dset_type == "sim":
+        with open(os.path.join(dset_path, "metadata.json"), "r") as f:
+            metadata = json.load(f)
+        plane_params = metadata["plane_params"]
+        plane_mesh = create_plane_mesh(**plane_params)
+
+        camera_poses = [np.array(pose) @ tmf_to_o3d_cam_tf for pose in metadata["tmf_poses"]]
+
+    elif dset_type == "real":
+        with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
+            plane_registration = json.load(f)
+        plane_mesh = create_plane_mesh(
+            plane_registration["plane_a"][0],
+            plane_registration["plane_a"][1],
+            plane_registration["plane_a"][2],
+            plane_registration["plane_d"],
+        )
+
+        with open(os.path.join(dset_path, "001", "tmf.json"), "r") as f:
+            tmf_data = json.load(f)
+
+        camera_poses = [np.array(datapoint["pose"]) @ tmf_to_o3d_cam_tf for datapoint in tmf_data]
+
+    plane_mesh.compute_vertex_normals()
+
+    # select sample_idxs for visualization
+    if num_samples_to_vis > len(all_results[inference_modes[0]]):
+        num_samples_to_vis = len(all_results[inference_modes[0]])
+        print(
+            f"WARNING: num_samples_to_vis ({num_samples_to_vis}) is greater than the number of samples in the test dataset ({len(all_results[inference_modes[0]])}). Visualizing all samples."
+        )
+
+    np.random.seed(0)  # for reproducibility
+    sample_idxs = np.random.choice(
+        len(all_results[inference_modes[0]]), num_samples_to_vis, replace=False
+    )
+
+    for inference_mode in tqdm(inference_modes, desc="Visualizing results", unit="inference mode"):
+        for sample_idx in tqdm(sample_idxs, desc="Visualizing results", unit="sample", leave=False):
+            result = all_results[inference_mode][sample_idx]
+
+            pred_tf_matrix = np.eye(4)
+            pred_tf_matrix[:3, :3] = rotation_6d_to_matrix(torch.tensor(result["pred_rot_6d"]))
+            pred_tf_matrix[:3, 3] = torch.tensor(result["pred_translation"])
+
+            gt_tf_matrix = np.eye(4)
+            gt_tf_matrix[:3, :3] = rotation_6d_to_matrix(torch.tensor(result["gt_rot_6d"]))
+            gt_tf_matrix[:3, 3] = torch.tensor(result["gt_translation"])
+
+            # transform object mesh by predicted pose
+            predicted_obj_mesh = copy.deepcopy(mesh)
+            predicted_obj_mesh.transform(pred_tf_matrix)
+
+            # transform object mesh by ground truth pose
+            gt_obj_mesh = copy.deepcopy(mesh)
+            gt_obj_mesh.transform(gt_tf_matrix)
+
+            plane_mesh.compute_vertex_normals()
+            predicted_obj_mesh.compute_vertex_normals()
+            gt_obj_mesh.compute_vertex_normals()
+
+            # due to some weirdness with open3d, this render_mesh_from_viewpoints function MUST
+            # be in a different function, or rendering will fail when the object or plane
+            # mesh changes
+            render_mesh_from_viewpoints(
+                plane_mesh,
+                predicted_obj_mesh,
+                gt_obj_mesh,
+                camera_poses,
+                dset_type,
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
+            )
+
+
+def render_mesh_from_viewpoints(
+    plane_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
+    predicted_obj_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
+    gt_obj_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
+    camera_poses: list,
+    dset_type: str,
+    output_path: str,
+):
+    """
+    Render the predicted and ground truth poses for a single sample from the dataset at a number
+    of camera viewpoints. Viewpoints are combined to one .png image and saved to file.
+
+    Args:
+        plane_mesh (o3d.cpu.pybind.geometry.TriangleMesh): Open3D mesh object representing the
+            plane
+        predicted_obj_mesh (o3d.cpu.pybind.geometry.TriangleMesh): Open3D mesh object representing
+            the predicted object pose
+        camera_poses (list): List of camera poses to render the scene from. Should be in o3d
+            camera convention - if they come from TMF poses, they must be converted to o3d first.
+        dset_type (str): Type of dataset, must be 'sim' or 'real'
+        output_path (str): Path to save the rendered image. Should end in '.png'
+    """
+
+    plane_color = [0.3, 0.3, 0.3]
+    predicted_mesh_color = [0.8, 0.1, 0.1]
+    gt_mesh_color = [0.1, 0.8, 0.1]
+
+    plane_mesh.paint_uniform_color(plane_color)
+    predicted_obj_mesh.paint_uniform_color(predicted_mesh_color)
+    gt_obj_mesh.paint_uniform_color(gt_mesh_color)
+
+    vis = o3d.visualization.Visualizer()
+    # window size needs to stay this - otherwise
+    # ctr.convert_from_pinhole_camera_parameters does not work due to an o3d limitation
+    window_size = {"width": 848, "height": 480}
+    vis.create_window(**window_size)
+    vis.add_geometry(plane_mesh)
+    vis.add_geometry(predicted_obj_mesh)
+    vis.add_geometry(gt_obj_mesh)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    full_image = Image.new(
+        "RGB",
+        (
+            window_size["width"] if dset_type == "sim" else window_size["width"] * 2,
+            window_size["height"] * len(camera_poses),
+        ),
+    )
+
+    for frame_idx, cam_pose in enumerate(camera_poses):
+        vis.reset_view_point(True)
+        vis.update_geometry(plane_mesh)
+        vis.update_geometry(predicted_obj_mesh)
+        vis.update_geometry(gt_obj_mesh)
+
+        # set the camera pose
+        ctr = vis.get_view_control()
+        parameters = ctr.convert_to_pinhole_camera_parameters()
+        parameters.extrinsic = homog_inv(cam_pose)
+
+        # https://github.com/isl-org/Open3D/issues/1164#issuecomment-2474064640
+        ctr.convert_from_pinhole_camera_parameters(parameters, allow_arbitrary=True)
+
+        vis.poll_events()
+        vis.update_renderer()
+
+        # capture the screen image as a numpy array
+        screen_image = vis.capture_screen_float_buffer(do_render=True)
+        screen_image = (np.asarray(screen_image) * 255).astype(np.uint8)
+        screen_image = Image.fromarray(screen_image)
+
+        # paste the captured image into the full image
+        full_image.paste(screen_image, (0, frame_idx * window_size["height"]))
+
+        # if using real data, also paste in the corresponding real rgb image
+        if dset_type == "real":
+            pass  # TODO not yet implemented
+
+            # example code from other script
+            # rgb_image_path = os.path.join(output_dir, "realsense", "rgb", f"{frame_idx + 1:06d}.png")
+            # other_image = Image.open(rgb_image_path)
+
+    full_image.save(output_path)
+
+    vis.destroy_window()
 
 
 def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
@@ -312,4 +532,5 @@ if __name__ == "__main__":
         batch_size=opts["batch_size"],
         rot_type=opts["rot_type"],
         obj_path=opts["obj_path"],
+        num_samples_to_vis=opts["num_samples_to_vis"],
     )
