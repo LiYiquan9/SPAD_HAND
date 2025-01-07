@@ -257,7 +257,7 @@ def visualize_results(
             plane_registration["plane_a"][0],
             plane_registration["plane_a"][1],
             plane_registration["plane_a"][2],
-            plane_registration["plane_d"],
+            -plane_registration["plane_d"],
         )
 
         with open(os.path.join(dset_path, "001", "tmf.json"), "r") as f:
@@ -299,7 +299,6 @@ def visualize_results(
             gt_obj_mesh = copy.deepcopy(mesh)
             gt_obj_mesh.transform(gt_tf_matrix)
 
-            plane_mesh.compute_vertex_normals()
             predicted_obj_mesh.compute_vertex_normals()
             gt_obj_mesh.compute_vertex_normals()
 
@@ -313,7 +312,7 @@ def visualize_results(
                 camera_poses,
                 dset_type,
                 dset_path,
-                sample_idx,
+                result["filename"],
                 os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
             )
 
@@ -325,7 +324,7 @@ def render_mesh_from_viewpoints(
     camera_poses: list,
     dset_type: str,
     dset_path: str,
-    sample_idx: int,
+    original_filename: int,
     output_path: str,
 ):
     """
@@ -401,7 +400,7 @@ def render_mesh_from_viewpoints(
         if dset_type == "real":
 
             rgb_image_path = os.path.join(
-                dset_path, f"{sample_idx+1:03d}", "realsense", "rgb", f"{frame_idx + 1:06d}.png"
+                dset_path, original_filename, "realsense", "rgb", f"{frame_idx + 1:06d}.png"
             )
             rgb_image = Image.open(rgb_image_path)
             rgb_image = rgb_image.resize(
