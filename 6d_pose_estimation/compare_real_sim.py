@@ -17,7 +17,7 @@ TEMP_SCENE_MESH_PATH = "data/TEMP_scene_mesh.npz"
 TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
 
 
-def vis_sim_data(real_data_path):
+def vis_sim_data(real_data_path: str, show: bool = False):
     # load scene mesh from obj file and save in the .npz format expected by MeshHist
     scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
 
@@ -57,14 +57,22 @@ def vis_sim_data(real_data_path):
     # scale. We should find the true scaling factor or have a more systematic way to do this
     real_hists = real_hists * 0.00000035 
 
-    fig, ax = plt.subplots(int(forward_model.num_cameras / 2 + 0.5), 2)
+    subplot_rows = int(forward_model.num_cameras / 2 + 0.5)
+    subplot_cols = 2
+
+    fig, ax = plt.subplots(subplot_rows, 2, figsize=(subplot_cols*4, subplot_rows*1.5))
     ax = ax.flatten()
     for i in range(forward_model.num_cameras):
         ax[i].plot(rendered_hists[i], label="sim_" + str(forward_model.camera_ids[i]))
         ax[i].plot(real_hists[i], label="real_" + str(forward_model.camera_ids[i]))
         plt.legend()
 
-    plt.show()
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    fig.savefig(os.path.join(real_data_path, "sim_real_comparison.png"))
 
 
 def homog_inv(tf: np.ndarray) -> np.ndarray:
@@ -87,6 +95,12 @@ if __name__ == "__main__":
         required=True,
         help="Path to real data. Should be folder with 'gt' and 'realsense' subfolders.",
     )
+    parser.add_argument(
+        "-s",
+        "--show",
+        action="store_true",
+        help="If included, show the interactive plots",
+    )
 
     args = parser.parse_args()
-    vis_sim_data(args.real_data)
+    vis_sim_data(args.real_data, args.show)
