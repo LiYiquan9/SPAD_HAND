@@ -65,6 +65,7 @@ def vis_sim_data(real_data_path: str, show: bool = False):
     for i in range(forward_model.num_cameras):
         ax[i].plot(rendered_hists[i], label="sim_" + str(forward_model.camera_ids[i]))
         ax[i].plot(real_hists[i], label="real_" + str(forward_model.camera_ids[i]))
+        ax[i].set_title(f"Camera {i:06d}")
         plt.legend()
 
     fig.tight_layout()
