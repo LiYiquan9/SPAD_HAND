@@ -43,7 +43,7 @@ def test(
     rot_type: str = "6d",
     obj_path: str = "",
     num_samples_to_vis: int = 10,
-    test_on_split: bool = "test"
+    test_on_split: bool = "test",
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -176,7 +176,26 @@ def test(
 
                 all_results[inference_mode].append(results)
 
+    # calculate average of metrics and save to file
+    summary_metrics = {}
+    for inference_mode in inference_modes:
+        summary_metrics[inference_mode] = {}
+        for metric in pred_metrics.keys():
+            summary_metrics[inference_mode][metric] = {}
+            all_datapoints = [data[metric] for data in all_results[inference_mode]]
+            summary_metrics[inference_mode][metric]["mean"] = np.mean(all_datapoints)
+            summary_metrics[inference_mode][metric]["90_pct"] = np.percentile(all_datapoints, 90)
+
+    with open(f"{output_dir}/summary_metrics.json", "w") as f:
+        json.dump(summary_metrics, f, indent=4)
+
+    # save model output data
+    print("Saving model predictions to json...")
+    with open(f"{output_dir}/model_predictions.json", "w") as f:
+        json.dump(all_results, f, indent=4)
+
     # generate plots and visualizations for results
+    plot_metrics(all_results, os.path.join(output_dir, "plots"), pred_metrics.keys())
     visualize_results(
         all_results,
         os.path.join(output_dir, "visualizations"),
@@ -185,23 +204,6 @@ def test(
         dset_type,
         num_samples_to_vis,
     )
-    plot_metrics(all_results, os.path.join(output_dir, "plots"), pred_metrics.keys())
-
-    # calculate average of metrics and save to file
-    avg_metrics = {}
-    for inference_mode in inference_modes:
-        avg_metrics[inference_mode] = {}
-        for metric in pred_metrics.keys():
-            avg_metrics[inference_mode][metric] = np.mean(
-                [data[metric] for data in all_results[inference_mode]]
-            )
-    with open(f"{output_dir}/avg_metrics.json", "w") as f:
-        json.dump(avg_metrics, f, indent=4)
-
-    # save model output data
-    print("Saving model predictions to json...")
-    with open(f"{output_dir}/model_predictions.json", "w") as f:
-        json.dump(all_results, f, indent=4)
 
 
 def visualize_results(
