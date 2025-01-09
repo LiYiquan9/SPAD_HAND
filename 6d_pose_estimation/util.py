@@ -125,3 +125,35 @@ def create_plane_mesh(
     mesh.triangles = o3d.utility.Vector3iVector([[0, 2, 1], [0, 3, 2]])
 
     return mesh
+
+def get_dc_offset(hist, clip=0.01, bandwidth=0.0001, step_size=0.00001):
+    """
+    Find the DC offset of a histogram
+
+    Args:
+        hist (np.array): histogram
+        clip (int): value above the minimum to clip the histogram at, e.g. if the minimum is 80 and
+            clip is 500, all values above 580 will be removed from the histogram
+    Returns:
+        float: DC offset of hist
+    """
+
+    # if there's a really high DC offset
+    clip = hist.min() + clip
+
+    # remove all values above clip from hist
+    hist = hist[hist <= clip]
+
+    # remove all zero values from hist
+    hist = hist[hist != 0]
+    
+    possible_offsets = np.arange(0, clip, step_size)
+    # densities is a (n_possible_offsets, n_bins) array
+    densities = np.sum(
+        (1 / (np.sqrt(2 * np.pi * bandwidth**2)))
+        * np.exp(-(((possible_offsets[:, None] - hist[None, :]) ** 2) / (2 * bandwidth**2)))
+    , axis=1)
+
+    offset = possible_offsets[np.argmax(densities)]
+
+    return offset

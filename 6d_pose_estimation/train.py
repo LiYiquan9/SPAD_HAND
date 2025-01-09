@@ -8,7 +8,9 @@ import json
 import logging
 import os
 import sys
+from typing import Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import trimesh
@@ -23,7 +25,8 @@ from tqdm import tqdm
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
+from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
+                                              rotation_6d_to_matrix)
 
 wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
@@ -45,6 +48,11 @@ def train(
     obj_path: str = "",
     check_real: bool = False,
     real_path: str = "",
+    normalize_hists: bool = False,
+    normalize_hist_peaks: bool = False,
+    standardize_input: bool = False,
+    trim_to_range: Tuple[int, int] = [0, 128],
+    subtract_dc_offset_from_real: bool = False,
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -62,6 +70,12 @@ def train(
         obj_path (str): Path to the object mesh
         check_real (bool): Whether to check the model on real data during training
         real_path (str): Path to the real data, if check_real is True
+        normalize_hists (bool): Whether to normalize the histograms to have an area under the curve of 1
+        normalize_hist_peaks (bool): Whether to normalize the histograms to have a peak of 1
+        standardize_input (bool): Whether to standardize the input histograms
+        trim_to_range (Tuple[int, int]): Range to trim the histograms to
+        subtract_dc_offset_from_real (bool): Whether to remove the DC offset from the histograms.
+            Applies to real data only
 
     Returns:
         None
@@ -80,30 +94,67 @@ def train(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    train_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="train")
-    test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
+    train_dataset = PoseEstimation6DDataset(
+        dset_path,
+        dset_type=dset_type,
+        split="train",
+        normalize_hists=normalize_hists,
+        normalize_hist_peaks=normalize_hist_peaks,
+        trim_to_range=trim_to_range,
+        subtract_dc_offset_from_real=subtract_dc_offset_from_real,
+    )
+    test_dataset = PoseEstimation6DDataset(
+        dset_path,
+        dset_type=dset_type,
+        split="test",
+        normalize_hists=normalize_hists,
+        normalize_hist_peaks=normalize_hist_peaks,
+        trim_to_range=trim_to_range,
+        subtract_dc_offset_from_real=subtract_dc_offset_from_real,
+    )
 
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     if check_real:
         real_test_dataset = PoseEstimation6DDataset(
-            real_path, dset_type="real", split="test", test_portion=1.0
+            real_path,
+            dset_type="real",
+            split="all",
+            normalize_hists=normalize_hists,
+            normalize_hist_peaks=normalize_hist_peaks,
+            trim_to_range=trim_to_range,
+            subtract_dc_offset_from_real=subtract_dc_offset_from_real,
         )
         real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
     print(f"Training dataset has {len(train_dataset)} samples")
     print(f"Testing dataset has {len(test_dataset)} samples")
 
-    # store mean and std
-    MEAN = torch.tensor([train_dataset.histograms.mean()]).to(device)
-    STD = torch.tensor([train_dataset.histograms.std()]).to(device)
-    mean_np = MEAN.cpu().numpy()
-    std_np = STD.cpu().numpy()
-    np.savez(f"{output_dir}/mean_std_data.npz", mean=mean_np, std=std_np)
+    if standardize_input:
+        # calculate and store per-bin per-zone std and mean for standardization
+        train_histograms = torch.tensor(train_dataset.histograms).to(
+            device
+        )  # n_samples, n_cameras, n_bins)
 
-    def normalize_hists(hists):
-        return (hists - MEAN) / (STD + 3e-9)
+        # need to add the level of noise we'll be using to the histograms so that standard deviation
+        # calculation is accurate. Otherwise we will get 0 stdev for bins that are always 0.
+        noise = torch.randn(train_histograms.size()).to(device) * noise_level
+        noised_train_histograms = train_histograms + noise
+        hist_means = torch.tensor(noised_train_histograms.mean(axis=(0))).to(
+            device
+        )  # (n_cameras, n_bins)
+        hist_stds = torch.tensor(noised_train_histograms.std(axis=(0))).to(
+            device
+        )  # (n_cameras, n_bins)
+        mean_np = hist_means.cpu().numpy()
+        std_np = hist_stds.cpu().numpy()
+        np.savez(f"{output_dir}/mean_std_data.npz", mean=mean_np, std=std_np)
+
+        def apply_standardization(hists):
+            output = (hists - hist_means[None, :, :]) / hist_stds[None, :, :]
+            output[torch.isnan(output)] = 0
+            return output
 
     epoch_data = []
 
@@ -121,13 +172,22 @@ def train(
             model.train()
 
             for batch_idx, (hists, labels) in enumerate(trainloader):
+                # noise is re-generated each batch
                 noise = torch.randn(hists.size()).to(device) * noise_level
 
                 hists = torch.tensor(hists).float().to(device)
 
-                hists = normalize_hists(hists).float() + noise
+                if standardize_input:
+                    hists = apply_standardization(hists).float() + noise
+
+                else:
+                    hists = hists + noise
 
                 labels = torch.tensor(labels).float().to(device)
+
+                # plt.plot(hists[0, 0].cpu().numpy())
+                # plt.suptitle("training (sim) data")
+                # plt.show()
 
                 optimizer.zero_grad()
                 outputs = model(hists)
@@ -195,8 +255,13 @@ def train(
 
                 for batch_idx, (hists, labels) in enumerate(testloader):
                     hists = torch.tensor(hists).float().to(device)
-                    hists = normalize_hists(hists).float()
+                    if standardize_input:
+                        hists = apply_standardization(hists).float()
                     labels = torch.tensor(labels).float().to(device)
+
+                    # plt.plot(hists[0, 0].cpu().numpy())
+                    # plt.suptitle("real data")
+                    # plt.show()
 
                     outputs = model(hists)
 
@@ -257,7 +322,9 @@ def train(
                     if check_real:
                         for batch_idx, (hists, labels, filenames) in enumerate(real_testloader):
                             hists = torch.tensor(hists).float().to(device)
-                            hists = normalize_hists(hists).float()
+
+                            if standardize_input:
+                                hists = apply_standardization(hists).float()
                             labels = torch.tensor(labels).float().to(device)
 
                             outputs = model(hists)
@@ -368,8 +435,14 @@ if __name__ == "__main__":
         epochs=opts["epochs"],
         batch_size=opts["batch_size"],
         save_model_interval=opts["save_model_interval"],
+        noise_level=opts["noise_level"],
         rot_type=opts["rot_type"],
         obj_path=opts["obj_path"],
         check_real=opts["check_real"],
         real_path=opts["real_path"],
+        normalize_hists=opts["normalize_hists"],
+        normalize_hist_peaks=opts["normalize_hist_peaks"],
+        standardize_input=opts["standardize_input"],
+        trim_to_range=opts["trim_to_range"],
+        subtract_dc_offset_from_real=opts["subtract_dc_offset_from_real"],
     )

@@ -64,6 +64,17 @@ def test(
         None
     """
 
+    # open opts file that was copied to training_path to extract normalization, trimming, and
+    # standardization parameters
+    with open(f"{training_path}/opts.yaml", "r") as f:
+        opts = yaml.safe_load(f)
+
+    standardize_input = opts["standardize_input"]
+    trim_to_range = opts["trim_to_range"]
+    normalize_hists = opts["normalize_hists"]
+    normalize_hist_peaks = opts["normalize_hist_peaks"]
+    subtract_dc_offset_from_real = opts["subtract_dc_offset_from_real"]
+
     if dset_type == "sim":
         full_dset_path = os.path.join(dset_path, "simulated_data.npz")
     else:
@@ -75,7 +86,15 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split=test_on_split)
+    test_dataset = PoseEstimation6DDataset(
+        full_dset_path,
+        dset_type=dset_type,
+        split=test_on_split,
+        trim_to_range=trim_to_range,
+        normalize_hists=normalize_hists,
+        normalize_hist_peaks=normalize_hist_peaks,
+        subtract_dc_offset_from_real=subtract_dc_offset_from_real,
+    )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     # calculate the average of the test dataset labels - these will be used as a baseline for
@@ -89,7 +108,6 @@ def test(
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
         flat_label = np.concatenate([label_ortho6d, label_translation])
-        # print(flat_label)
         test_labels.append(torch.from_numpy(flat_label))
     test_labels = torch.stack(test_labels).to(device)
     test_labels_avg = torch.mean(test_labels, dim=0)
@@ -97,11 +115,13 @@ def test(
     print(f"Testing dataset has {len(test_dataset)} samples")
 
     results = np.load(f"{training_path}/mean_std_data.npz")
-    MEAN = torch.tensor(results["mean"]).to(device)
-    STD = torch.tensor(results["std"]).to(device)
+    hist_means = torch.tensor(results["mean"]).to(device)
+    hist_stds = torch.tensor(results["std"]).to(device)
 
-    def normalize_hists(hists):
-        return (hists - MEAN) / (STD + 3e-9)
+    def apply_standardization(hists):
+        output = (hists - hist_means[None, :, :]) / hist_stds[None, :, :]
+        output[torch.isnan(output)] = 0
+        return output
 
     inference_modes = ["supervised_model", "test_set_avg"]
     all_results = {inference_type: [] for inference_type in inference_modes}
@@ -125,13 +145,16 @@ def test(
                 raw_input_hists, labels, filenames = loaded_data
 
             raw_input_hists = raw_input_hists.float().to(device)
-            norm_input_hists = normalize_hists(raw_input_hists).float()
+            if standardize_input:
+                input_hists = apply_standardization(raw_input_hists).float()
+            else:
+                input_hists = raw_input_hists.float()
             labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":
-                outputs = model(norm_input_hists)
+                outputs = model(input_hists)
             elif inference_mode == "test_set_avg":
-                outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
+                outputs = test_labels_avg.repeat(input_hists.shape[0], 1).to(device).float()
             elif inference_mode == "supervised_and_optimize":
                 raise NotImplementedError("supervised_model_and_optimize not implemented yet")
 

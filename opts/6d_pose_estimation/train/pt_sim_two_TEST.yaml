@@ -1,0 +1,10 @@
+---
+batch_size: 2048
+check_real: true
+dset_path: data/sim_data/6d_pose/two_50000/simulated_data.npz
+dset_type: sim
+epochs: 1000
+obj_path: data/obj_meshes/two.stl
+real_path: data/real_data/6d_pose/two_16_poses
+rot_type: 6d
+save_model_interval: 50

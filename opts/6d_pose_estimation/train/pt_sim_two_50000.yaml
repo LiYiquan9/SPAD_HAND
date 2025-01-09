@@ -4,7 +4,11 @@ check_real: true
 dset_path: data/sim_data/6d_pose/two_50000/simulated_data.npz
 dset_type: sim
 epochs: 1000
+noise_level: 0.0001 # noise is applied after normalization, before standardization
+normalize_hists: true # whether to normalize the scale of the histograms so that the area under them is 1 before standardization
 obj_path: data/obj_meshes/two.stl
 real_path: data/real_data/6d_pose/two_16_poses
 rot_type: 6d
 save_model_interval: 50
+standardize_input: true # whether to standardize the data (for each bin, for each zone, set the mean to 0 and standard deviation to 1)
+trim_to_range: [0, 100] # bin range to trim data to before normalization and input to the network

@@ -1,0 +1,10 @@
+---
+batch_size: 2048
+dset_path: data/real_data/6d_pose/two_16_poses
+dset_type: real
+num_samples_to_vis: 50
+obj_path: data/obj_meshes/two.stl
+rot_type: 6d
+save_opt: true
+test_on_split: all
+training_path: 6d_pose_estimation/results/train/pt_sim_two_50000_copy
