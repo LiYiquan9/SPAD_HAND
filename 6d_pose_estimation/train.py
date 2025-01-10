@@ -28,7 +28,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
                                               rotation_6d_to_matrix)
 
-wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
+# wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -215,14 +215,14 @@ def train(
 
                 loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
 
-                wandb.log(
-                    {
-                        "train_rot_loss": rot_loss.item(),
-                        "train_trans_loss": trans_loss.item(),
-                        "train_pc_loss": pc_loss.item(),
-                        "train_total_loss": loss.item(),
-                    }
-                )
+                # wandb.log(
+                #     {
+                #         "train_rot_loss": rot_loss.item(),
+                #         "train_trans_loss": trans_loss.item(),
+                #         "train_pc_loss": pc_loss.item(),
+                #         "train_total_loss": loss.item(),
+                #     }
+                # )
 
                 loss.backward()
                 optimizer.step()
@@ -289,14 +289,14 @@ def train(
 
                     loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
 
-                    wandb.log(
-                        {
-                            "test_rot_loss": rot_loss.item(),
-                            "test_trans_loss": trans_loss.item(),
-                            "test_pc_loss": pc_loss.item(),
-                            "test_total_loss": loss.item(),
-                        }
-                    )
+                    # wandb.log(
+                    #     {
+                    #         "test_rot_loss": rot_loss.item(),
+                    #         "test_trans_loss": trans_loss.item(),
+                    #         "test_pc_loss": pc_loss.item(),
+                    #         "test_total_loss": loss.item(),
+                    #     }
+                    # )
 
                     data = {
                         "prediction_rot_6d": outputs_rot_6d[0].tolist(),
@@ -355,14 +355,14 @@ def train(
 
                             loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
 
-                            wandb.log(
-                                {
-                                    "real_test_rot_loss": rot_loss.item(),
-                                    "real_test_trans_loss": trans_loss.item(),
-                                    "real_test_pc_loss": pc_loss.item(),
-                                    "real_test_total_loss": loss.item(),
-                                }
-                            )
+                            # wandb.log(
+                            #     {
+                            #         "real_test_rot_loss": rot_loss.item(),
+                            #         "real_test_trans_loss": trans_loss.item(),
+                            #         "real_test_pc_loss": pc_loss.item(),
+                            #         "real_test_total_loss": loss.item(),
+                            #     }
+                            # )
 
                             for k in range(outputs_rot_6d.size()[0]):
                                 data = {
