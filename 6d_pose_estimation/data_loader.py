@@ -51,9 +51,9 @@ class PoseEstimation6DDataset(Dataset):
             self.object_poses = []
             self.filenames = []
 
-            capture_folders = [
-                f for f in os.listdir(dset_path) if os.path.isdir(os.path.join(dset_path, f))
-            ]
+            capture_folders = sorted([f for f in os.listdir(dset_path) if os.path.isdir(os.path.join(dset_path, f))],
+                                    key=lambda x: int(x)
+                                    )
 
             for capture_folder in capture_folders:
                 # TODO: the first 6 real data can fit well, but the rest will have one histogram that does not match, need to check
@@ -68,7 +68,8 @@ class PoseEstimation6DDataset(Dataset):
 
                 gt_pose_data = np.load(os.path.join(dset_path, capture_folder, "gt", "gt_pose.npy"))
                 this_capture_poses = gt_pose_data[None, :]
-
+                this_capture_poses[0,2,3] -= 0.012 # re-align plane and object on z-axis
+                
                 self.histograms.append(this_capture_histograms)
                 self.object_poses.append(this_capture_poses)
                 self.filenames.append(capture_folder)
@@ -90,9 +91,9 @@ class PoseEstimation6DDataset(Dataset):
         self.histograms[self.histograms < 1e-4] = 0
 
         # normalize within each histograms
-        means = self.histograms.mean(axis=-1, keepdims=True)
-        stds = self.histograms.std(axis=-1, keepdims=True)
-        self.histograms = (self.histograms - means) / stds
+        # means = self.histograms.mean(axis=-1, keepdims=True)
+        # stds = self.histograms.std(axis=-1, keepdims=True)
+        # self.histograms = (self.histograms - means) / stds
 
         if self.split == "train":
             self.histograms = self.histograms[train_indices]

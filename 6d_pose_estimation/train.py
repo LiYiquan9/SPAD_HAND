@@ -105,6 +105,11 @@ def train(
     def normalize_hists(hists):
         return (hists - MEAN) / (STD + 3e-9)
 
+    def self_norm(hists):
+        per_hist_mean = hists.mean(dim=-1, keepdim=True)
+        per_hist_std = hists.std(dim=-1, keepdim=True)
+        return (hists - per_hist_mean) / (per_hist_std + 3e-9)
+    
     epoch_data = []
 
     # load model
@@ -125,6 +130,8 @@ def train(
 
                 hists = torch.tensor(hists).float().to(device)
 
+                hists = self_norm(hists).float()
+                
                 hists = normalize_hists(hists).float() + noise
 
                 labels = torch.tensor(labels).float().to(device)
@@ -195,6 +202,7 @@ def train(
 
                 for batch_idx, (hists, labels) in enumerate(testloader):
                     hists = torch.tensor(hists).float().to(device)
+                    hists = self_norm(hists).float()
                     hists = normalize_hists(hists).float()
                     labels = torch.tensor(labels).float().to(device)
 
@@ -257,6 +265,7 @@ def train(
                     if check_real:
                         for batch_idx, (hists, labels, filenames) in enumerate(real_testloader):
                             hists = torch.tensor(hists).float().to(device)
+                            hists = self_norm(hists).float()
                             hists = normalize_hists(hists).float()
                             labels = torch.tensor(labels).float().to(device)
 

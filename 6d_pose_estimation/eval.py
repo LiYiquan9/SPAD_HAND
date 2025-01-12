@@ -17,7 +17,7 @@ from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
 from PIL import Image
 from tqdm import tqdm
-from util import homog_inv, create_plane_mesh
+from util import homog_inv, create_plane_mesh, convert_json_to_meshhist_pose_format
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -26,11 +26,17 @@ import torch
 import trimesh
 from torch.utils.data import DataLoader
 
+from spad_mesh.sim.model import MeshHist
 from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 start_time = datetime.datetime.now()
+
+def self_norm(hists):
+        per_hist_mean = hists.mean(dim=-1, keepdim=True)
+        per_hist_std = hists.std(dim=-1, keepdim=True)
+        return (hists - per_hist_mean) / (per_hist_std + 3e-9)
 
 
 def test(
@@ -44,6 +50,7 @@ def test(
     obj_path: str = "",
     num_samples_to_vis: int = 10,
     test_on_split: bool = "test",
+    sensor_plane_path: str = "",
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -76,7 +83,7 @@ def test(
 
     # load dataset
     test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split=test_on_split)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # calculate the average of the test dataset labels - these will be used as a baseline for
     # comparison (test_set_avg inference mode)
@@ -102,13 +109,14 @@ def test(
 
     def normalize_hists(hists):
         return (hists - MEAN) / (STD + 3e-9)
-
-    inference_modes = ["supervised_model", "test_set_avg"]
+    
+    
+    inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
     all_results = {inference_type: [] for inference_type in inference_modes}
 
     # load model
     model = PoseEstimation6DModel(device=device).to(device)
-    model.load_state_dict(torch.load(f"{training_path}/model_final.pth", weights_only=False))
+    model.load_state_dict(torch.load(f"{training_path}/model_599.pth", weights_only=False))
 
     # evaluate model
     model.eval()
@@ -125,7 +133,8 @@ def test(
                 raw_input_hists, labels, filenames = loaded_data
 
             raw_input_hists = raw_input_hists.float().to(device)
-            norm_input_hists = normalize_hists(raw_input_hists).float()
+            self_norm_hists = self_norm(raw_input_hists)
+            norm_input_hists = normalize_hists(self_norm_hists).float()
             labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":
@@ -133,7 +142,12 @@ def test(
             elif inference_mode == "test_set_avg":
                 outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
             elif inference_mode == "supervised_and_optimize":
-                raise NotImplementedError("supervised_model_and_optimize not implemented yet")
+                
+                assert batch_size == 1, "batch size must be 1 for supervised_and_optimize"
+                assert sensor_plane_path != "", "sensor_plane_path must be provided for supervised_and_optimize"
+                
+                outputs_before_opt = model(norm_input_hists)
+                outputs = optimize(outputs_before_opt, raw_input_hists, sensor_plane_path, obj_path)
 
             if rot_type == "6d":
                 gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -171,7 +185,7 @@ def test(
                     gt_obj_pcd[sample_idx],
                     pred_obj_pcd[sample_idx],
                 )
-
+   
                 results.update(pred_metrics)  # add metrics to data
 
                 all_results[inference_mode].append(results)
@@ -205,7 +219,75 @@ def test(
         num_samples_to_vis,
     )
 
+def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sensor_plane_path:str=None, obj_path:str=None):
+    
+    # load plane and object meshes
+    plane_mesh = trimesh.load(f"{sensor_plane_path}/gt/plane.obj")
+    object_mesh = trimesh.load(obj_path)
+    
+    # load rotation and translation from supervised model
+    rotation = outputs_supervised[0, :6].reshape(2,3).detach().requires_grad_()
+    translation = outputs_supervised[0, 6:9].detach().requires_grad_()
 
+    translation.requires_grad = True
+    rotation.requires_grad = True
+    
+    # load sensor positions from json file and save in the .npz format expected by MeshHist
+    with open(os.path.join(sensor_plane_path, "tmf.json")) as f:
+        tmf_data = json.load(f)
+
+    poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
+
+    cam_rotations, cam_translations = convert_json_to_meshhist_pose_format(poses_homog)
+
+    # init optimization layer
+    layer = MeshHist(
+        camera_config={
+            "rotations": cam_rotations,
+            "translations": cam_translations,
+            "camera_ids": np.arange(len(poses_homog)),
+        },
+        mesh_info={
+            "vertices": object_mesh.vertices,
+            "faces": object_mesh.faces,
+            "face_normals": object_mesh.face_normals,
+            "vert_normals": object_mesh.vertex_normals,
+        },
+        background_mesh={
+            "vertices": plane_mesh.vertices,
+            "faces": plane_mesh.faces,
+            "face_normals": plane_mesh.face_normals,
+            "vert_normals": plane_mesh.vertex_normals,
+        },
+        with_bin_scaling=False,
+    )
+
+    optimizer = torch.optim.Adam(
+        [
+            {"params": translation, "lr": 1e-3},
+            {"params": rotation, "lr": 1e-2},
+        ]
+    )
+    losses = []
+    opt_steps = 50
+    for i in range(opt_steps):
+        hists = layer(rotation, translation)
+        hists = torch.roll(hists, shifts=1, dims=1)
+        hists_15 = torch.cat((hists[:9], hists[10:]), dim=0)
+        raw_input_hists_15 = torch.cat((raw_input_hists[0, :9], raw_input_hists[0, 10:]), dim=0)
+        hists_15 = self_norm(hists_15)
+        raw_input_hists_15 = self_norm(raw_input_hists_15)
+
+        loss = torch.nn.MSELoss()(hists_15, raw_input_hists_15)
+        losses.append(loss.item())
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+    return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
+
+    
+    
 def visualize_results(
     all_results: dict,
     output_dir: str,
@@ -256,7 +338,8 @@ def visualize_results(
         camera_poses = [np.array(pose) @ tmf_to_o3d_cam_tf for pose in metadata["tmf_poses"]]
 
     elif dset_type == "real":
-        with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
+        with open("/home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/two_16_poses_plane_registration.json", "r") as f:
+        # with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
             plane_registration = json.load(f)
         plane_mesh = create_plane_mesh(
             plane_registration["plane_a"][0],
@@ -318,14 +401,14 @@ def visualize_results(
                 dset_type,
                 dset_path,
                 result["filename"],
-                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.obj"),
             )
 
 
 def render_mesh_from_viewpoints(
-    plane_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
-    predicted_obj_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
-    gt_obj_mesh: o3d.cpu.pybind.geometry.TriangleMesh,
+    plane_mesh: o3d.geometry.TriangleMesh,
+    predicted_obj_mesh: o3d.geometry.TriangleMesh,
+    gt_obj_mesh: o3d.geometry.TriangleMesh,
     camera_poses: list,
     dset_type: str,
     dset_path: str,
@@ -356,6 +439,14 @@ def render_mesh_from_viewpoints(
     plane_mesh.paint_uniform_color(plane_color)
     predicted_obj_mesh.paint_uniform_color(predicted_mesh_color)
     gt_obj_mesh.paint_uniform_color(gt_mesh_color)
+    
+    # save as mesh
+    # TODO: enable open3d visualization on remote server
+    combined_mesh = plane_mesh + predicted_obj_mesh + gt_obj_mesh
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    combined_mesh.compute_vertex_normals()
+    o3d.io.write_triangle_mesh(output_path, combined_mesh)
+    return 
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise
@@ -548,4 +639,5 @@ if __name__ == "__main__":
         obj_path=opts["obj_path"],
         num_samples_to_vis=opts["num_samples_to_vis"],
         test_on_split=opts["test_on_split"],
+        sensor_plane_path=opts["sensor_plane_path"],
     )

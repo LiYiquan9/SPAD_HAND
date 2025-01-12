@@ -101,7 +101,8 @@ def create_plane_mesh(
     d: float,
     x_bounds: Tuple[float, float] = (-5, 5),
     y_bounds: Tuple[float, float] = (-5, 5),
-) -> o3d.cpu.pybind.geometry.TriangleMesh:
+# ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+) -> o3d.geometry.TriangleMesh:
     """
     Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
 
