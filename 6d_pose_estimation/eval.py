@@ -28,6 +28,8 @@ from torch.utils.data import DataLoader
 
 from spad_mesh.sim.model import MeshHist
 from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
+from scipy.spatial import cKDTree
+import time
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -199,8 +201,8 @@ def test(
             all_datapoints = [data[metric] for data in all_results[inference_mode]]
             summary_metrics[inference_mode][metric]["mean"] = np.mean(all_datapoints)
             summary_metrics[inference_mode][metric]["90_pct"] = np.percentile(all_datapoints, 90)
-        summary_metrics[inference_mode]["AUC-ADD"] = compute_auc_add(all_results[inference_mode])
-
+        summary_metrics[inference_mode]["AUC-ADD"],summary_metrics[inference_mode]["AUC-ADD-S"] = compute_auc_add(all_results[inference_mode])
+  
     with open(f"{output_dir}/summary_metrics.json", "w") as f:
         json.dump(summary_metrics, f, indent=4)
 
@@ -542,28 +544,29 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         plt.savefig(os.path.join(output_dir, f"{metric}.png"))
     
     # Plot AUC-ADD curves
-    auc_add_thresholds = np.linspace(0, 0.1, 100)
-    plt.figure(figsize=(8, 6))
-    for inference_mode in all_results.keys():
-        add_values = [
-            all_results[inference_mode][i]["ADD"] for i in range(len(all_results[inference_mode]))
-        ]
-        add_values = np.array(add_values)
-        accuracies = [(add_values <= threshold).mean() for threshold in auc_add_thresholds]
-        plt.plot(
-            auc_add_thresholds,
-            accuracies,
-            label=f"{inference_mode} (AUC = {np.trapz(accuracies, auc_add_thresholds)*10.0:.4f})",
-            linewidth=2
-        )
-    plt.xlabel("Threshold (meters)", fontsize=12)
-    plt.ylabel("Accuracy", fontsize=12)
-    plt.title("AUC-ADD Curves", fontsize=14)
-    plt.grid(alpha=0.3)
-    plt.legend(fontsize=10, loc="lower right")
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "AUC_ADD.png"))
-    plt.close()
+    for add in ["ADD", "ADD-S"]:
+        auc_add_thresholds = np.linspace(0, 0.1, 100)
+        plt.figure(figsize=(8, 6))
+        for inference_mode in all_results.keys():
+            add_values = [
+                all_results[inference_mode][i][f"{add}"] for i in range(len(all_results[inference_mode]))
+            ]
+            add_values = np.array(add_values)
+            accuracies = [(add_values <= threshold).mean() for threshold in auc_add_thresholds]
+            plt.plot(
+                auc_add_thresholds,
+                accuracies,
+                label=f"{inference_mode} (AUC = {np.trapz(accuracies, auc_add_thresholds)*10.0:.4f})",
+                linewidth=2
+            )
+        plt.xlabel("Threshold (meters)", fontsize=12)
+        plt.ylabel("Accuracy", fontsize=12)
+        plt.title(f"AUC-{add} Curves", fontsize=14)
+        plt.grid(alpha=0.3)
+        plt.legend(fontsize=10, loc="lower right")
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f"AUC_{add}.png"))
+        plt.close()
 
 def compute_auc_add(all_results: List[dict]) -> float:
     """
@@ -575,12 +578,16 @@ def compute_auc_add(all_results: List[dict]) -> float:
     Returns:
         float: AUC-ADD metric
     """
-    add_values = np.array([result["ADD"] for result in all_results])
-    thresholds = np.linspace(0, 0.1, 100)
-    accuracies = [(add_values <= threshold).mean() for threshold in thresholds]
-    auc_add = np.trapz(accuracies, thresholds)
-
-    return auc_add*10.0  # multiply by 10 to get the AUC-ADD metric
+    
+    ret_dict = {}
+    for add in ["ADD", "ADD-S"]:
+        add_values = np.array([result[add] for result in all_results])
+        thresholds = np.linspace(0, 0.1, 100)
+        accuracies = [(add_values <= threshold).mean() for threshold in thresholds]
+        auc_add = np.trapz(accuracies, thresholds)*10.0
+        ret_dict[add] = auc_add
+    
+    return ret_dict["ADD"], ret_dict["ADD-S"]
 
 def get_pred_metrics(
     pred_rot_6d: torch.Tensor,
@@ -615,14 +622,20 @@ def get_pred_metrics(
 
     ADD = torch.mean(torch.norm(gt_obj_pcd - pred_obj_pcd, dim=1)).item()
 
-    # TODO the vectorized verison of ADD-S uses a ton of memory but this looped version is really
-    # slow
+    # TODO the vectorized verison of ADD-S uses a ton of memory but this looped version is really slow
+    # time: 0.055s
     # point_distances = []
     # for point_idx in range(gt_obj_pcd.shape[0]):
     #     point_distances.append(
     #         torch.norm(gt_obj_pcd[point_idx] - pred_obj_pcd, dim=1).min().item()
     #     )
     # ADD_S = np.mean(point_distances)
+    
+    # time: 0.0018s
+    # code from https://github.com/NVlabs/FoundationPose/blob/fbbbe456c6f841d844025b5e493db1f731164e3d/Utils.py#L242
+    nn_index = cKDTree(pred_obj_pcd.cpu().detach().numpy())
+    nn_dists, _ = nn_index.query(gt_obj_pcd.cpu().detach().numpy(), k=1, workers=-1)
+    ADD_S = nn_dists.mean()
 
     translation_error = torch.norm(gt_translation - pred_translation).item()
 
@@ -639,7 +652,7 @@ def get_pred_metrics(
 
     return {
         "ADD": ADD,
-        # "ADD-S": ADD_S,
+        "ADD-S": ADD_S,
         "translation_error": translation_error,
         "rotation_error": rotation_error,
     }
