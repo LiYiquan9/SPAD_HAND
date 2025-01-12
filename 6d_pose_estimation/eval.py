@@ -199,6 +199,7 @@ def test(
             all_datapoints = [data[metric] for data in all_results[inference_mode]]
             summary_metrics[inference_mode][metric]["mean"] = np.mean(all_datapoints)
             summary_metrics[inference_mode][metric]["90_pct"] = np.percentile(all_datapoints, 90)
+        summary_metrics[inference_mode]["AUC-ADD"] = compute_auc_add(all_results[inference_mode])
 
     with open(f"{output_dir}/summary_metrics.json", "w") as f:
         json.dump(summary_metrics, f, indent=4)
@@ -269,7 +270,7 @@ def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sens
         ]
     )
     losses = []
-    opt_steps = 50
+    opt_steps = 100
     for i in range(opt_steps):
         hists = layer(rotation, translation)
         hists = torch.roll(hists, shifts=1, dims=1)
@@ -277,7 +278,6 @@ def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sens
         raw_input_hists_15 = torch.cat((raw_input_hists[0, :9], raw_input_hists[0, 10:]), dim=0)
         hists_15 = self_norm(hists_15)
         raw_input_hists_15 = self_norm(raw_input_hists_15)
-
         loss = torch.nn.MSELoss()(hists_15, raw_input_hists_15)
         losses.append(loss.item())
         optimizer.zero_grad()
@@ -540,7 +540,47 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         fig.suptitle(metric)
         fig.tight_layout()
         plt.savefig(os.path.join(output_dir, f"{metric}.png"))
+    
+    # Plot AUC-ADD curves
+    auc_add_thresholds = np.linspace(0, 0.1, 100)
+    plt.figure(figsize=(8, 6))
+    for inference_mode in all_results.keys():
+        add_values = [
+            all_results[inference_mode][i]["ADD"] for i in range(len(all_results[inference_mode]))
+        ]
+        add_values = np.array(add_values)
+        accuracies = [(add_values <= threshold).mean() for threshold in auc_add_thresholds]
+        plt.plot(
+            auc_add_thresholds,
+            accuracies,
+            label=f"{inference_mode} (AUC = {np.trapz(accuracies, auc_add_thresholds)*10.0:.4f})",
+            linewidth=2
+        )
+    plt.xlabel("Threshold (meters)", fontsize=12)
+    plt.ylabel("Accuracy", fontsize=12)
+    plt.title("AUC-ADD Curves", fontsize=14)
+    plt.grid(alpha=0.3)
+    plt.legend(fontsize=10, loc="lower right")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "AUC_ADD.png"))
+    plt.close()
 
+def compute_auc_add(all_results: List[dict]) -> float:
+    """
+    Compute the AUC-ADD metric for a list of results
+
+    Args:
+        all_results (List[dict]): List of results, each containing the ADD metric
+
+    Returns:
+        float: AUC-ADD metric
+    """
+    add_values = np.array([result["ADD"] for result in all_results])
+    thresholds = np.linspace(0, 0.1, 100)
+    accuracies = [(add_values <= threshold).mean() for threshold in thresholds]
+    auc_add = np.trapz(accuracies, thresholds)
+
+    return auc_add*10.0  # multiply by 10 to get the AUC-ADD metric
 
 def get_pred_metrics(
     pred_rot_6d: torch.Tensor,
