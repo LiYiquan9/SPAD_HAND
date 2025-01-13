@@ -105,12 +105,12 @@ def test(
 
     print(f"Testing dataset has {len(test_dataset)} samples")
 
-    results = np.load(f"{training_path}/mean_std_data.npz")
-    MEAN = torch.tensor(results["mean"]).to(device)
-    STD = torch.tensor(results["std"]).to(device)
+    # results = np.load(f"{training_path}/mean_std_data.npz")
+    # MEAN = torch.tensor(results["mean"]).to(device)
+    # STD = torch.tensor(results["std"]).to(device)
 
-    def normalize_hists(hists):
-        return (hists - MEAN) / (STD + 3e-9)
+    # def normalize_hists(hists):
+    #     return (hists - MEAN) / (STD + 3e-9)
     
     
     inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
@@ -118,7 +118,7 @@ def test(
 
     # load model
     model = PoseEstimation6DModel(device=device).to(device)
-    model.load_state_dict(torch.load(f"{training_path}/model_599.pth", weights_only=False))
+    model.load_state_dict(torch.load(f"{training_path}/model_499.pth", weights_only=False))
 
     # evaluate model
     model.eval()
@@ -136,7 +136,8 @@ def test(
 
             raw_input_hists = raw_input_hists.float().to(device)
             self_norm_hists = self_norm(raw_input_hists)
-            norm_input_hists = normalize_hists(self_norm_hists).float()
+            norm_input_hists = self_norm_hists
+            # norm_input_hists = normalize_hists(self_norm_hists).float()
             labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":

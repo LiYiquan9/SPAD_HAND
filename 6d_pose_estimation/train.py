@@ -96,14 +96,14 @@ def train(
     print(f"Testing dataset has {len(test_dataset)} samples")
 
     # store mean and std
-    MEAN = torch.tensor([train_dataset.histograms.mean()]).to(device)
-    STD = torch.tensor([train_dataset.histograms.std()]).to(device)
-    mean_np = MEAN.cpu().numpy()
-    std_np = STD.cpu().numpy()
-    np.savez(f"{output_dir}/mean_std_data.npz", mean=mean_np, std=std_np)
+    # MEAN = torch.tensor([train_dataset.histograms.mean()]).to(device)
+    # STD = torch.tensor([train_dataset.histograms.std()]).to(device)
+    # mean_np = MEAN.cpu().numpy()
+    # std_np = STD.cpu().numpy()
+    # np.savez(f"{output_dir}/mean_std_data.npz", mean=mean_np, std=std_np)
 
-    def normalize_hists(hists):
-        return (hists - MEAN) / (STD + 3e-9)
+    # def normalize_hists(hists):
+    #     return (hists - MEAN) / (STD + 3e-9)
 
     def self_norm(hists):
         per_hist_mean = hists.mean(dim=-1, keepdim=True)
@@ -113,9 +113,9 @@ def train(
     epoch_data = []
 
     # load model
-    model = PoseEstimation6DModel(device=device).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.1)
+    model = PoseEstimation6DModel(device=device, num_cameras=16).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.8)
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
 
@@ -132,7 +132,7 @@ def train(
 
                 hists = self_norm(hists).float()
                 
-                hists = normalize_hists(hists).float() + noise
+                # hists = normalize_hists(hists).float() + noise
 
                 labels = torch.tensor(labels).float().to(device)
 
@@ -203,7 +203,7 @@ def train(
                 for batch_idx, (hists, labels) in enumerate(testloader):
                     hists = torch.tensor(hists).float().to(device)
                     hists = self_norm(hists).float()
-                    hists = normalize_hists(hists).float()
+                    # hists = normalize_hists(hists).float()
                     labels = torch.tensor(labels).float().to(device)
 
                     outputs = model(hists)
@@ -266,7 +266,7 @@ def train(
                         for batch_idx, (hists, labels, filenames) in enumerate(real_testloader):
                             hists = torch.tensor(hists).float().to(device)
                             hists = self_norm(hists).float()
-                            hists = normalize_hists(hists).float()
+                            # hists = normalize_hists(hists).float()
                             labels = torch.tensor(labels).float().to(device)
 
                             outputs = model(hists)

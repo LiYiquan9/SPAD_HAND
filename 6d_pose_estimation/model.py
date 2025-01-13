@@ -113,7 +113,7 @@ class TransformerBlock(nn.Module):
 
 
 class PoseEstimation6DModel(nn.Module):
-    def __init__(self, device, num_cameras=16, dropout_rate=0.2, rot_type="6d"):
+    def __init__(self, device, num_cameras=16, dropout_rate=0.0, rot_type="6d"):
         super().__init__()
 
         self.device = device
@@ -157,6 +157,8 @@ class PoseEstimation6DModel(nn.Module):
 
         batchsize, num_cameras, num_bins = x.size()
 
+        assert num_cameras == self.num_cameras, "Number of cameras does not match"
+        
         hist_feature = x
 
         hist_feature = hist_feature.view(
@@ -174,7 +176,7 @@ class PoseEstimation6DModel(nn.Module):
         feature = hist_feature + self.pe(hist_feature)  # shape[batchsize*num_cameras, 64]
 
         feature = feature.view(batchsize, num_cameras, -1)
-
+        
         for transformer in self.transformers:
             feature = transformer(feature)
 

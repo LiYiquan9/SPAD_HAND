@@ -65,9 +65,10 @@ class PoseEstimation6DDataset(Dataset):
                     np.array([m["hists"] for m in tmf_data]).sum(axis=1)[None, :] * 0.00000035
                     - 0.0006
                 )
-
+                # this_capture_histograms = this_capture_histograms[:,::4] # downsample camera views
+                
                 gt_pose_data = np.load(os.path.join(dset_path, capture_folder, "gt", "gt_pose.npy"))
-                this_capture_poses = gt_pose_data[None, :]
+                this_capture_poses = gt_pose_data[None, :] 
                 this_capture_poses[0,2,3] -= 0.012 # re-align plane and object on z-axis
                 
                 self.histograms.append(this_capture_histograms)
