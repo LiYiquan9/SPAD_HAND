@@ -341,8 +341,8 @@ def visualize_results(
         camera_poses = [np.array(pose) @ tmf_to_o3d_cam_tf for pose in metadata["tmf_poses"]]
 
     elif dset_type == "real":
-        with open("/home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/two_16_poses_plane_registration.json", "r") as f:
-        # with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
+        # with open("/home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/two_16_poses_plane_registration.json", "r") as f:
+        with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
             plane_registration = json.load(f)
         plane_mesh = create_plane_mesh(
             plane_registration["plane_a"][0],
@@ -404,7 +404,7 @@ def visualize_results(
                 dset_type,
                 dset_path,
                 result["filename"],
-                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.obj"),
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
             )
 
 
@@ -449,7 +449,7 @@ def render_mesh_from_viewpoints(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    return 
+    # return 
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise

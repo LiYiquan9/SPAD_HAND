@@ -1,0 +1,11 @@
+---
+batch_size: 1
+dset_path: data/real_data/6d_pose/two_16_poses_refined_gt
+dset_type: real
+num_samples_to_vis: 50
+obj_path: data/obj_meshes/two.stl
+rot_type: 6d
+save_opt: true
+sensor_plane_path: data/real_data/6d_pose/two_16_poses_refined_gt/001
+test_on_split: all
+training_path: 6d_pose_estimation/results/train/pt_sim_two_50000_yiquan
