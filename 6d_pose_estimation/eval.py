@@ -35,10 +35,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 start_time = datetime.datetime.now()
 
+
 def self_norm(hists):
-        per_hist_mean = hists.mean(dim=-1, keepdim=True)
-        per_hist_std = hists.std(dim=-1, keepdim=True)
-        return (hists - per_hist_mean) / (per_hist_std + 3e-9)
+    per_hist_mean = hists.mean(dim=-1, keepdim=True)
+    per_hist_std = hists.std(dim=-1, keepdim=True)
+    return (hists - per_hist_mean) / (per_hist_std + 3e-9)
 
 
 def test(
@@ -53,6 +54,8 @@ def test(
     num_samples_to_vis: int = 10,
     test_on_split: bool = "test",
     sensor_plane_path: str = "",
+    subsample_n_test_samples: int = 0,
+    include_hist_idxs: list | str = "all",
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -68,6 +71,10 @@ def test(
         obj_path (str): Path to the object mesh file
         test_on_split (str): If 'test', only test on the test split of the dataset. If 'train',
             test only on the train split. If 'all', test on the entire dataset.
+        sensor_plane_path (str): Path to the sensor plane mesh file
+        subsample_n_test_samples (int): If > 0, only use this many test samples, the rest will be
+            discarded. Useful for faster eval.
+        include_hist_idxs (list, optional): If a list, only include the histograms at these indices.
 
     Returns:
         None
@@ -84,7 +91,13 @@ def test(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    test_dataset = PoseEstimation6DDataset(full_dset_path, dset_type=dset_type, split=test_on_split)
+    test_dataset = PoseEstimation6DDataset(
+        full_dset_path,
+        dset_type=dset_type,
+        split=test_on_split,
+        subsample_n_test_samples=subsample_n_test_samples,
+        include_hist_idxs=include_hist_idxs,
+    )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     # calculate the average of the test dataset labels - these will be used as a baseline for
@@ -111,14 +124,15 @@ def test(
 
     # def normalize_hists(hists):
     #     return (hists - MEAN) / (STD + 3e-9)
-    
-    
+
     inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
     all_results = {inference_type: [] for inference_type in inference_modes}
 
     # load model
-    model = PoseEstimation6DModel(device=device).to(device)
-    model.load_state_dict(torch.load(f"{training_path}/model_499.pth", weights_only=False))
+    model = PoseEstimation6DModel(device=device, num_cameras=test_dataset.histograms.shape[1]).to(
+        device
+    )
+    model.load_state_dict(torch.load(training_path, weights_only=False))
 
     # evaluate model
     model.eval()
@@ -145,12 +159,20 @@ def test(
             elif inference_mode == "test_set_avg":
                 outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
             elif inference_mode == "supervised_and_optimize":
-                
+
                 assert batch_size == 1, "batch size must be 1 for supervised_and_optimize"
-                assert sensor_plane_path != "", "sensor_plane_path must be provided for supervised_and_optimize"
-                
+                assert (
+                    sensor_plane_path != ""
+                ), "sensor_plane_path must be provided for supervised_and_optimize"
+
                 outputs_before_opt = model(norm_input_hists)
-                outputs = optimize(outputs_before_opt, raw_input_hists, sensor_plane_path, obj_path)
+                outputs = optimize(
+                    outputs_before_opt,
+                    raw_input_hists,
+                    sensor_plane_path,
+                    obj_path,
+                    include_hist_idxs,
+                )
 
             if rot_type == "6d":
                 gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -188,7 +210,7 @@ def test(
                     gt_obj_pcd[sample_idx],
                     pred_obj_pcd[sample_idx],
                 )
-   
+
                 results.update(pred_metrics)  # add metrics to data
 
                 all_results[inference_mode].append(results)
@@ -202,8 +224,10 @@ def test(
             all_datapoints = [data[metric] for data in all_results[inference_mode]]
             summary_metrics[inference_mode][metric]["mean"] = np.mean(all_datapoints)
             summary_metrics[inference_mode][metric]["90_pct"] = np.percentile(all_datapoints, 90)
-        summary_metrics[inference_mode]["AUC-ADD"],summary_metrics[inference_mode]["AUC-ADD-S"] = compute_auc_add(all_results[inference_mode])
-  
+        summary_metrics[inference_mode]["AUC-ADD"], summary_metrics[inference_mode]["AUC-ADD-S"] = (
+            compute_auc_add(all_results[inference_mode])
+        )
+
     with open(f"{output_dir}/summary_metrics.json", "w") as f:
         json.dump(summary_metrics, f, indent=4)
 
@@ -223,19 +247,26 @@ def test(
         num_samples_to_vis,
     )
 
-def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sensor_plane_path:str=None, obj_path:str=None):
-    
+
+def optimize(
+    outputs_supervised: torch.Tensor,
+    raw_input_hists: torch.Tensor,
+    sensor_plane_path: str = None,
+    obj_path: str = None,
+    include_hist_idxs: list | str = "all",
+):
+
     # load plane and object meshes
     plane_mesh = trimesh.load(f"{sensor_plane_path}/gt/plane.obj")
     object_mesh = trimesh.load(obj_path)
-    
+
     # load rotation and translation from supervised model
-    rotation = outputs_supervised[0, :6].reshape(2,3).detach().requires_grad_()
+    rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
 
     translation.requires_grad = True
     rotation.requires_grad = True
-    
+
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(sensor_plane_path, "tmf.json")) as f:
         tmf_data = json.load(f)
@@ -275,13 +306,13 @@ def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sens
     losses = []
     opt_steps = 100
     for i in range(opt_steps):
-        hists = layer(rotation, translation)
-        hists = torch.roll(hists, shifts=1, dims=1)
-        hists_15 = torch.cat((hists[:9], hists[10:]), dim=0)
-        raw_input_hists_15 = torch.cat((raw_input_hists[0, :9], raw_input_hists[0, 10:]), dim=0)
-        hists_15 = self_norm(hists_15)
-        raw_input_hists_15 = self_norm(raw_input_hists_15)
-        loss = torch.nn.MSELoss()(hists_15, raw_input_hists_15)
+        rendered_hists = layer(rotation, translation)
+        if include_hist_idxs != "all":
+            rendered_hists = rendered_hists[include_hist_idxs, :]
+        rendered_hists = torch.roll(rendered_hists, shifts=1, dims=1)
+        rendered_hists = self_norm(rendered_hists)
+        raw_input_hists = self_norm(raw_input_hists)
+        loss = torch.nn.MSELoss()(rendered_hists, raw_input_hists)
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
@@ -289,8 +320,7 @@ def optimize(outputs_supervised:torch.Tensor, raw_input_hists:torch.Tensor, sens
 
     return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
 
-    
-    
+
 def visualize_results(
     all_results: dict,
     output_dir: str,
@@ -341,7 +371,6 @@ def visualize_results(
         camera_poses = [np.array(pose) @ tmf_to_o3d_cam_tf for pose in metadata["tmf_poses"]]
 
     elif dset_type == "real":
-        # with open("/home/yiquan/spad_hand_carter/SPAD_HAND__Carter/data/two_16_poses_plane_registration.json", "r") as f:
         with open(os.path.join(dset_path, "plane_registration.json"), "r") as f:
             plane_registration = json.load(f)
         plane_mesh = create_plane_mesh(
@@ -442,14 +471,14 @@ def render_mesh_from_viewpoints(
     plane_mesh.paint_uniform_color(plane_color)
     predicted_obj_mesh.paint_uniform_color(predicted_mesh_color)
     gt_obj_mesh.paint_uniform_color(gt_mesh_color)
-    
+
     # save as mesh
     # TODO: enable open3d visualization on remote server
     combined_mesh = plane_mesh + predicted_obj_mesh + gt_obj_mesh
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    # return 
+    # return
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise
@@ -543,14 +572,15 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         fig.suptitle(metric)
         fig.tight_layout()
         plt.savefig(os.path.join(output_dir, f"{metric}.png"))
-    
+
     # Plot AUC-ADD curves
     for add in ["ADD", "ADD-S"]:
         auc_add_thresholds = np.linspace(0, 0.1, 100)
         plt.figure(figsize=(8, 6))
         for inference_mode in all_results.keys():
             add_values = [
-                all_results[inference_mode][i][f"{add}"] for i in range(len(all_results[inference_mode]))
+                all_results[inference_mode][i][f"{add}"]
+                for i in range(len(all_results[inference_mode]))
             ]
             add_values = np.array(add_values)
             accuracies = [(add_values <= threshold).mean() for threshold in auc_add_thresholds]
@@ -558,7 +588,7 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
                 auc_add_thresholds,
                 accuracies,
                 label=f"{inference_mode} (AUC = {np.trapz(accuracies, auc_add_thresholds)*10.0:.4f})",
-                linewidth=2
+                linewidth=2,
             )
         plt.xlabel("Threshold (meters)", fontsize=12)
         plt.ylabel("Accuracy", fontsize=12)
@@ -568,6 +598,7 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, f"AUC_{add}.png"))
         plt.close()
+
 
 def compute_auc_add(all_results: List[dict]) -> float:
     """
@@ -579,16 +610,17 @@ def compute_auc_add(all_results: List[dict]) -> float:
     Returns:
         float: AUC-ADD metric
     """
-    
+
     ret_dict = {}
     for add in ["ADD", "ADD-S"]:
         add_values = np.array([result[add] for result in all_results])
         thresholds = np.linspace(0, 0.1, 100)
         accuracies = [(add_values <= threshold).mean() for threshold in thresholds]
-        auc_add = np.trapz(accuracies, thresholds)*10.0
+        auc_add = np.trapz(accuracies, thresholds) * 10.0
         ret_dict[add] = auc_add
-    
+
     return ret_dict["ADD"], ret_dict["ADD-S"]
+
 
 def get_pred_metrics(
     pred_rot_6d: torch.Tensor,
@@ -631,7 +663,7 @@ def get_pred_metrics(
     #         torch.norm(gt_obj_pcd[point_idx] - pred_obj_pcd, dim=1).min().item()
     #     )
     # ADD_S = np.mean(point_distances)
-    
+
     # time: 0.0018s
     # code from https://github.com/NVlabs/FoundationPose/blob/fbbbe456c6f841d844025b5e493db1f731164e3d/Utils.py#L242
     nn_index = cKDTree(pred_obj_pcd.cpu().detach().numpy())
@@ -694,4 +726,6 @@ if __name__ == "__main__":
         num_samples_to_vis=opts["num_samples_to_vis"],
         test_on_split=opts["test_on_split"],
         sensor_plane_path=opts["sensor_plane_path"],
+        subsample_n_test_samples=opts["subsample_n_test_samples"],
+        include_hist_idxs=opts["include_hist_idxs"],
     )

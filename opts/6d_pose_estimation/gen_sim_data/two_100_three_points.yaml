@@ -1,11 +1,11 @@
 ---
-constraint: object_on_surface
+constraint: three_points_of_contact
 gen_previews: false
 mesh_path: data/obj_meshes/two.stl
-n_obj_poses: 50000
+n_obj_poses: 100
 num_hist_bins: 128
 real_dataset_path: data/real_data/6d_pose/two_16_poses
-t_noise_level: 0.015
+t_noise_level: 0
 translation_ranges:
   x: [-0.1, 0.1]
   y: [-0.1, 0.1]

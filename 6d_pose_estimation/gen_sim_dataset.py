@@ -62,8 +62,8 @@ def gen_sim_dataset(
         n_obj_poses: The number of random object poses to generate.
         gen_previews: Whether to generate preview images of the simulated data. Not reocmmended on
             full-size datasets.
-        constraint: The constraint for the object poses. Can be "none", "object_on_surface", or
-            "object_above_surface".
+        constraint: The constraint for the object poses. Can be "none", "object_on_surface",
+            "object_above_surface", or "three_points_of_contact".
         t_noise_level: The standard deviation of the translation noise to add to the camera
             positions.
     """
@@ -180,7 +180,7 @@ def gen_sim_dataset(
                 "translation_ranges": translation_ranges,
                 "constraint": constraint,
                 "plane_params": plane_params,
-                "tmf_poses": poses_homog.tolist()
+                "tmf_poses": poses_homog.tolist(),
             },
             f,
             indent=4,
@@ -223,8 +223,8 @@ def generate_random_poses(
         n_poses: The number of random poses to generate.
         t_ranges: The ranges for the random translations. If constraint is specified, z range may
             be ignored or limited to satisfy constraints.
-        constraint: The constraint for the object poses. Can be "none", "object_on_surface", or
-            "object_above_surface".
+        constraint: The constraint for the object poses. Can be "none", "object_on_surface",
+            "object_above_surface", or "three_points_of_contact".
         plane_params: The plane model to use for object pose constraints. Not required if constraint
             is "none".
         obj_mesh: The object mesh to use for object pose constraints. Not required if constraint is
@@ -233,7 +233,12 @@ def generate_random_poses(
     Returns:
         A numpy array of shape (n_poses, 4, 4) containing the random object poses.
     """
-    if constraint not in ["none", "object_on_surface", "object_above_surface"]:
+    if constraint not in [
+        "none",
+        "object_on_surface",
+        "object_above_surface",
+        "three_points_of_contact",
+    ]:
         raise ValueError("Invalid constraint specified.")
 
     if constraint != "none":
@@ -286,6 +291,8 @@ def generate_random_poses(
                 if plane_z > lowest_obj_vertex[2]:
                     rejected_samples += 1
                     continue
+            elif constraint == "three_points_of_contact":
+                raise NotImplementedError("Three points of contact constraint not yet implemented.")
 
         object_poses.append(tf_homog)
         pose_idx += 1

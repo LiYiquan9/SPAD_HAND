@@ -40,6 +40,7 @@ def train(
     batch_size: int,
     save_model_interval: int,
     noise_level: float = 0.00,
+    include_hist_idxs: list | str = "all",
     test_interval: int = 1,
     rot_type: str = "6d",
     obj_path: str = "",
@@ -80,40 +81,34 @@ def train(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
-    train_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="train")
-    test_dataset = PoseEstimation6DDataset(dset_path, dset_type=dset_type, split="test")
+    train_dataset = PoseEstimation6DDataset(
+        dset_path, dset_type=dset_type, split="train", include_hist_idxs=include_hist_idxs
+    )
+    test_dataset = PoseEstimation6DDataset(
+        dset_path, dset_type=dset_type, split="test", include_hist_idxs=include_hist_idxs
+    )
 
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     if check_real:
         real_test_dataset = PoseEstimation6DDataset(
-            real_path, dset_type="real", split="test", test_portion=1.0
+            real_path, dset_type="real", split="test", test_portion=1.0, include_hist_idxs=include_hist_idxs
         )
         real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
     print(f"Training dataset has {len(train_dataset)} samples")
     print(f"Testing dataset has {len(test_dataset)} samples")
 
-    # store mean and std
-    # MEAN = torch.tensor([train_dataset.histograms.mean()]).to(device)
-    # STD = torch.tensor([train_dataset.histograms.std()]).to(device)
-    # mean_np = MEAN.cpu().numpy()
-    # std_np = STD.cpu().numpy()
-    # np.savez(f"{output_dir}/mean_std_data.npz", mean=mean_np, std=std_np)
-
-    # def normalize_hists(hists):
-    #     return (hists - MEAN) / (STD + 3e-9)
-
     def self_norm(hists):
         per_hist_mean = hists.mean(dim=-1, keepdim=True)
         per_hist_std = hists.std(dim=-1, keepdim=True)
         return (hists - per_hist_mean) / (per_hist_std + 3e-9)
-    
+
     epoch_data = []
 
     # load model
-    model = PoseEstimation6DModel(device=device, num_cameras=16).to(device)
+    model = PoseEstimation6DModel(device=device, num_cameras=train_dataset.histograms.shape[1]).to(device)
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.8)
     l1_loss = nn.L1Loss()
@@ -129,10 +124,9 @@ def train(
                 noise = torch.randn(hists.size()).to(device) * noise_level
 
                 hists = torch.tensor(hists).float().to(device)
+                hists = hists + noise
 
                 hists = self_norm(hists).float()
-                
-                # hists = normalize_hists(hists).float() + noise
 
                 labels = torch.tensor(labels).float().to(device)
 
@@ -381,4 +375,5 @@ if __name__ == "__main__":
         obj_path=opts["obj_path"],
         check_real=opts["check_real"],
         real_path=opts["real_path"],
+        include_hist_idxs=opts["include_hist_idxs"],
     )
