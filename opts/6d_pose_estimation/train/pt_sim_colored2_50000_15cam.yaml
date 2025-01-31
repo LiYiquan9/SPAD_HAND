@@ -9,7 +9,7 @@ noise_level: 0
 normalize_hist_peaks: true
 normalize_hists: false
 obj_path: data/obj_meshes/two.stl
-real_path: data/real_data/6d_pose/colored_twos/matte_gray_refined_gt
+real_path: data/real_data/6d_pose/colored_twos/matte_white_refined_gt
 rot_type: 6d
 save_model_interval: 50
 standardize_input: false

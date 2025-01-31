@@ -105,6 +105,8 @@ def gen_sim_dataset(
         transformed_object_mesh = object_mesh.copy()
         transformed_object_mesh.apply_transform(object_pose)
 
+        print("plane mesh vertices", plane_mesh.vertices)
+
         scene_mesh = trimesh.util.concatenate([plane_mesh, transformed_object_mesh])
 
         # create forward model for scene mesh + camera positions
