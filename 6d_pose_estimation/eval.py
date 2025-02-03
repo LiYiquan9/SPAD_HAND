@@ -260,6 +260,57 @@ def optimize(
     plane_mesh = trimesh.load(f"{sensor_plane_path}/gt/plane.obj")
     object_mesh = trimesh.load(obj_path)
 
+    # plane_mesh.vertices = [ # setting this fixes it??
+    #     [-5.,        -5.,        -0.0973211,],
+    #     [-5.,         5.,        -0.207898 ,],
+    #     [ 5.,         5.,        -0.234209 ,],
+    #     [ 5.,        -5.,        -0.123633 ,],
+    # ]
+
+    plane_mesh.vertices[0][2] += 1e-7  # this fixes it????
+
+    # print("plane_mesh vertices", plane_mesh.vertices)
+    # print("plane mesh faces", plane_mesh.faces)
+    # print("plane mesh normals", plane_mesh.face_normals)
+    # print("plane mesh vertex normals", plane_mesh.vertex_normals)
+
+    """
+    mattewhite2 (broken)
+    plane_mesh vertices
+    [[-5.       -5.       -0.131366]
+    [-5.        5.       -0.210161]
+    [ 5.        5.       -0.199364]
+    [ 5.       -5.       -0.120569]]
+    plane mesh faces
+    [[0 2 1]
+    [0 3 2]]
+    plane mesh normals
+    [[-0.00107967  0.00787925  0.99996838]
+    [-0.00107967  0.00787925  0.99996838]]
+    plane mesh vertex normals
+    [[-0.00107967  0.00787925  0.99996838]
+    [-0.00107967  0.00787925  0.99996838]
+    [-0.00107967  0.00787925  0.99996838]
+    [-0.00107967  0.00787925  0.99996838]]
+
+    real (works)
+    [[-5.        -5.        -0.0973211]
+    [-5.         5.        -0.207898 ]
+    [ 5.         5.        -0.234209 ]
+    [ 5.        -5.        -0.123633 ]]
+    plane mesh faces
+    [[0 2 1]
+    [0 3 2]]
+    plane mesh normals
+    [[0.00263093 0.01105698 0.99993541]
+    [0.00263102 0.01105689 0.99993541]]
+    plane mesh vertex normals
+    [[0.00263098 0.01105693 0.99993541]
+    [0.00263093 0.01105698 0.99993541]
+    [0.00263098 0.01105693 0.99993541]
+    [0.00263102 0.01105689 0.99993541]]
+    """
+
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
@@ -309,16 +360,32 @@ def optimize(
         rendered_hists = layer(rotation, translation)
         if include_hist_idxs != "all":
             rendered_hists = rendered_hists[include_hist_idxs, :]
+
+        # vis_hists(
+        #     rendered_hists, raw_input_hists[0, :, :], "rendered (blue) and raw input hists (orange)"
+        # )
+
         rendered_hists = torch.roll(rendered_hists, shifts=1, dims=1)
         rendered_hists = self_norm(rendered_hists)
-        raw_input_hists = self_norm(raw_input_hists)
-        loss = torch.nn.MSELoss()(rendered_hists, raw_input_hists)
+        norm_raw_input_hists = self_norm(raw_input_hists)
+        loss = torch.nn.MSELoss()(rendered_hists, norm_raw_input_hists[0, :, :])
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
+        print("loss", loss)
         optimizer.step()
 
     return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
+
+
+def vis_hists(hists1, hists2=None, title=""):
+    fig, ax = plt.subplots(hists1.shape[0], 1)
+    for hist1, axis in zip(hists1, ax):
+        axis.plot(hist1.detach().cpu().numpy(), label="hist1", color="tab:blue")
+    for hist2, axis in zip(hists2, ax):
+        axis.plot(hist2.detach().cpu().numpy(), label="hist2", color="tab:orange")
+    fig.suptitle(title)
+    plt.show()
 
 
 def visualize_results(
@@ -539,6 +606,39 @@ def render_mesh_from_viewpoints(
     full_image.save(output_path)
 
     vis.destroy_window()
+
+
+def create_plane_mesh(
+    a: float,
+    b: float,
+    c: float,
+    d: float,
+    x_bounds: Tuple[float, float] = (-5, 5),
+    y_bounds: Tuple[float, float] = (-5, 5),
+) -> o3d.cpu.pybind.geometry.TriangleMesh:
+    """
+    Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
+
+    Assumes the mesh is not (very near to) vertical.
+    """
+
+    def get_z(x, y):
+        return (-a * x - b * y - d) / c
+
+    # create a point at each corner of the plane
+    p1 = np.array([x_bounds[0], y_bounds[0], get_z(x_bounds[0], y_bounds[0])])
+    p2 = np.array([x_bounds[0], y_bounds[1], get_z(x_bounds[0], y_bounds[1])])
+    p3 = np.array([x_bounds[1], y_bounds[1], get_z(x_bounds[1], y_bounds[1])])
+    p4 = np.array([x_bounds[1], y_bounds[0], get_z(x_bounds[1], y_bounds[0])])
+
+    # create a mesh from the points with two triangles
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector([p1, p2, p3, p4])
+    # the below vertex windings create a plane normal pointing in the positive z direction,
+    # so it is visible from above
+    mesh.triangles = o3d.utility.Vector3iVector([[0, 2, 1], [0, 3, 2]])
+
+    return mesh
 
 
 def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
