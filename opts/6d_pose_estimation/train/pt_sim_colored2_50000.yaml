@@ -5,6 +5,7 @@ dset_path: data/sim_data/6d_pose/colored2_50000/simulated_data.npz
 dset_type: sim
 epochs: 1000
 include_hist_idxs: "all"
+loss_type: "rot_trans_pcd"
 noise_level: 0
 normalize_hist_peaks: true
 normalize_hists: false

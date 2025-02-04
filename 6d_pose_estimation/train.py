@@ -12,7 +12,6 @@ import sys
 import numpy as np
 import torch
 import trimesh
-import wandb
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
@@ -20,6 +19,9 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from util import knn_one_point
+
+import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -46,6 +48,7 @@ def train(
     obj_path: str = "",
     check_real: bool = False,
     real_path: str = "",
+    loss_type: str = "rot_trans_pcd",
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -63,6 +66,7 @@ def train(
         obj_path (str): Path to the object mesh
         check_real (bool): Whether to check the model on real data during training
         real_path (str): Path to the real data, if check_real is True
+        loss (str): Type of loss to use
 
     Returns:
         None
@@ -93,7 +97,11 @@ def train(
 
     if check_real:
         real_test_dataset = PoseEstimation6DDataset(
-            real_path, dset_type="real", split="test", test_portion=1.0, include_hist_idxs=include_hist_idxs
+            real_path,
+            dset_type="real",
+            split="test",
+            test_portion=1.0,
+            include_hist_idxs=include_hist_idxs,
         )
         real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
@@ -108,7 +116,9 @@ def train(
     epoch_data = []
 
     # load model
-    model = PoseEstimation6DModel(device=device, num_cameras=train_dataset.histograms.shape[1]).to(device)
+    model = PoseEstimation6DModel(device=device, num_cameras=train_dataset.histograms.shape[1]).to(
+        device
+    )
     optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.8)
     l1_loss = nn.L1Loss()
@@ -284,12 +294,21 @@ def train(
                             else:
                                 raise Exception("support only 6d rotation type")
 
-                            rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-                            # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
-                            trans_loss = l1_loss(outputs_trans, labels_trans)
-                            pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
+                            if loss_type == "rot_trans_pcd":
+                                rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
+                                # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
+                                trans_loss = l1_loss(outputs_trans, labels_trans)
+                                pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
 
-                            loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
+                                loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
+
+                            elif loss_type == "ADD_S":
+                                loss = torch.norm(
+                                    calculate_ADD_S(outputs_obj_pc, labels_obj_pc), p=1
+                                )  # l1
+
+                            else:
+                                raise ValueError(f"Invalid loss type: {loss_type}")
 
                             wandb.log(
                                 {
@@ -340,6 +359,23 @@ def train(
         json.dump(epoch_data, f, indent=4)
 
 
+def calculate_ADD_S(pred, gt_xyz):
+    # E6SD expects a different dim order, so it's easiest to just re-order here and keep the rest
+    # of the fn the same
+    gt_xyz = gt_xyz.permute(0, 2, 1)
+    pred = pred.permute(0, 2, 1)
+
+    # below is unchanged from E6SD
+    num_valid, _, num_points = gt_xyz.size()
+    # inputs should be (batch, n, 3) and (batch, m, 3)
+    inds = knn_one_point(pred.permute(0, 2, 1), gt_xyz.permute(0, 2, 1))  # num_valid, num_points
+    inds = inds.view(num_valid, 1, num_points).repeat(1, 3, 1)
+    tar_tmp = torch.gather(gt_xyz, 2, inds)
+    add_ij = torch.mean(torch.norm(pred - tar_tmp, dim=1), dim=1)  # [nv]
+
+    return add_ij
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a pose estimation model")
     parser.add_argument(
@@ -376,4 +412,5 @@ if __name__ == "__main__":
         check_real=opts["check_real"],
         real_path=opts["real_path"],
         include_hist_idxs=opts["include_hist_idxs"],
+        loss_type=opts["loss_type"],
     )

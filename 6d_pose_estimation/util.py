@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 import numpy as np
 import open3d as o3d
+import torch
 
 JSON_TO_MESHHIST_CAM_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
@@ -126,3 +127,37 @@ def create_plane_mesh(
     mesh.triangles = o3d.utility.Vector3iVector([[0, 2, 1], [0, 3, 2]])
 
     return mesh
+
+def square_distance(src, dst):
+    """
+    Taken from E6SD
+    Calculate Euclid distance between each two points.
+
+    src^T * dst = xn * xm + yn * ym + zn * zm；
+    sum(src^2, dim=-1) = xn*xn + yn*yn + zn*zn;
+    sum(dst^2, dim=-1) = xm*xm + ym*ym + zm*zm;
+    dist = (xn - xm)^2 + (yn - ym)^2 + (zn - zm)^2
+         = sum(src**2,dim=-1)+sum(dst**2,dim=-1)-2*src^T*dst
+
+    Input:
+        src: source points, [B, N, C]
+        dst: target points, [B, M, C]
+    Output:
+        dist: per-point square distance, [B, N, M]
+    """
+    B, N, _ = src.shape
+    _, M, _ = dst.shape
+    dist = -2 * torch.matmul(src, dst.permute(0, 2, 1))
+    dist += torch.sum(src ** 2, -1).view(B, N, 1)
+    dist += torch.sum(dst ** 2, -1).view(B, 1, M)
+    return dist
+
+def knn_one_point(xyz, new_xyz):
+    """
+    Taken from E6SD
+    :param xyz: src points [B, N, 3]
+    :param new_xyz: tar points [B, M, 3]
+    :return: knn_idx: grouped points index, [B, N, 1]
+    """
+    sqrdists = square_distance(xyz, new_xyz)
+    return sqrdists.argmin(dim=2)
