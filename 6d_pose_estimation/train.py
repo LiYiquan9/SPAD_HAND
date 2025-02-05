@@ -10,6 +10,7 @@ import os
 import sys
 
 import numpy as np
+import open3d as o3d
 import torch
 import trimesh
 import yaml
@@ -25,7 +26,8 @@ import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
+from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
+                                              rotation_6d_to_matrix)
 
 wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
@@ -49,6 +51,7 @@ def train(
     check_real: bool = False,
     real_path: str = "",
     loss_type: str = "rot_trans_pcd",
+    mesh_sample_count: int = 1000,
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -67,6 +70,7 @@ def train(
         check_real (bool): Whether to check the model on real data during training
         real_path (str): Path to the real data, if check_real is True
         loss (str): Type of loss to use
+        mesh_sample_count (int): Number of points to sample from the object mesh for ADD-S loss
 
     Returns:
         None
@@ -81,7 +85,7 @@ def train(
 
     # load obj points
     obj_mesh = trimesh.load(obj_path)
-    obj_points = obj_mesh.sample(1000)
+    obj_points = obj_mesh.sample(mesh_sample_count)
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
@@ -124,6 +128,37 @@ def train(
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
 
+    def get_loss(
+        outputs_rot_6d, labels_rot_6d, outputs_trans, labels_trans, outputs_obj_pc, labels_obj_pc
+    ):
+        if loss_type == "rot_trans_pcd":
+            rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
+            # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
+            trans_loss = l1_loss(outputs_trans, labels_trans)
+            pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
+
+            loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
+
+        elif loss_type == "ADD_S":
+            # # visualize output_obj_pc and labels_obj_pc in same window with open3d
+            # output_obj_pc = outputs_obj_pc[0].cpu().detach().numpy()
+            # label_obj_pc = labels_obj_pc[0].cpu().detach().numpy()
+
+            # # draw just the first sample in the batch
+            # output_obj_pc_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(output_obj_pc))
+            # output_obj_pc_o3d.paint_uniform_color([1, 0, 0]) # model prediction is red
+            # label_obj_pc_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(label_obj_pc))
+            # label_obj_pc_o3d.paint_uniform_color([0, 1, 0]) # ground truth is green
+
+            # o3d.visualization.draw_geometries([output_obj_pc_o3d, label_obj_pc_o3d])
+
+            loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
+
+        else:
+            raise ValueError(f"Invalid loss type: {loss_type}")
+
+        return loss
+
     # train model
     total_batches = epochs * (len(trainloader) + len(testloader) // test_interval)
     with tqdm(total=total_batches, desc="Total Progress", unit="batch") as pbar:
@@ -153,24 +188,28 @@ def train(
                     labels_rot_matrix = labels[:, :3, :3]
                     outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
 
+                    # apply rotation to object point cloud
                     labels_obj_pc = torch.matmul(obj_points, labels_rot_matrix.transpose(1, 2))
                     outputs_obj_pc = torch.matmul(obj_points, outputs_rot_matrix.transpose(1, 2))
+
+                    # apply translation to object point cloud
+                    labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
+                    outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
 
                 else:
                     raise Exception("support only 6d rotation type")
 
-                rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-                # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
-                trans_loss = l1_loss(outputs_trans, labels_trans)
-                pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
-
-                loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
+                loss = get_loss(
+                    outputs_rot_6d,
+                    labels_rot_6d,
+                    outputs_trans,
+                    labels_trans,
+                    outputs_obj_pc,
+                    labels_obj_pc,
+                )
 
                 wandb.log(
                     {
-                        "train_rot_loss": rot_loss.item(),
-                        "train_trans_loss": trans_loss.item(),
-                        "train_pc_loss": pc_loss.item(),
                         "train_total_loss": loss.item(),
                     }
                 )
@@ -193,10 +232,7 @@ def train(
                 pbar.update(1)
                 pbar.set_postfix(
                     epoch=epoch + 1,
-                    train_loss=loss.item(),
-                    rot_loss=rot_loss.item(),
-                    pc_loss=pc_loss.item(),
-                    trans_loss=trans_loss.item(),
+                    train_loss=loss.item()
                 )
 
             scheduler.step()
@@ -229,18 +265,8 @@ def train(
                     else:
                         raise Exception("support only 6d rotation type")
 
-                    rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-                    # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
-                    trans_loss = l1_loss(outputs_trans, labels_trans)
-                    pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
-
-                    loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
-
                     wandb.log(
                         {
-                            "test_rot_loss": rot_loss.item(),
-                            "test_trans_loss": trans_loss.item(),
-                            "test_pc_loss": pc_loss.item(),
                             "test_total_loss": loss.item(),
                         }
                     )
@@ -261,9 +287,6 @@ def train(
                     pbar.set_postfix(
                         epoch=epoch + 1,
                         test_loss=loss.item(),
-                        rot_loss=rot_loss.item(),
-                        pc_loss=pc_loss.item(),
-                        trans_loss=trans_loss.item(),
                     )
 
                     if check_real:
@@ -294,27 +317,17 @@ def train(
                             else:
                                 raise Exception("support only 6d rotation type")
 
-                            if loss_type == "rot_trans_pcd":
-                                rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-                                # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
-                                trans_loss = l1_loss(outputs_trans, labels_trans)
-                                pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
-
-                                loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
-
-                            elif loss_type == "ADD_S":
-                                loss = torch.norm(
-                                    calculate_ADD_S(outputs_obj_pc, labels_obj_pc), p=1
-                                )  # l1
-
-                            else:
-                                raise ValueError(f"Invalid loss type: {loss_type}")
+                            loss = get_loss(
+                                outputs_rot_6d,
+                                labels_rot_6d,
+                                outputs_trans,
+                                labels_trans,
+                                outputs_obj_pc,
+                                labels_obj_pc,
+                            )
 
                             wandb.log(
                                 {
-                                    "real_test_rot_loss": rot_loss.item(),
-                                    "real_test_trans_loss": trans_loss.item(),
-                                    "real_test_pc_loss": pc_loss.item(),
                                     "real_test_total_loss": loss.item(),
                                 }
                             )
@@ -338,9 +351,6 @@ def train(
                             pbar.set_postfix(
                                 epoch=epoch + 1,
                                 test_loss=loss.item(),
-                                rot_loss=rot_loss.item(),
-                                pc_loss=pc_loss.item(),
-                                trans_loss=trans_loss.item(),
                             )
 
             if (epoch + 1) % save_model_interval == 0:
@@ -413,4 +423,5 @@ if __name__ == "__main__":
         real_path=opts["real_path"],
         include_hist_idxs=opts["include_hist_idxs"],
         loss_type=opts["loss_type"],
+        mesh_sample_count=opts["mesh_sample_count"],
     )

@@ -6,6 +6,7 @@ dset_type: sim
 epochs: 1000
 include_hist_idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
 loss_type: "rot_trans_pcd"
+mesh_sample_count: 500
 noise_level: 0
 normalize_hist_peaks: true
 normalize_hists: false

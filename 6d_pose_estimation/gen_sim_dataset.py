@@ -105,8 +105,6 @@ def gen_sim_dataset(
         transformed_object_mesh = object_mesh.copy()
         transformed_object_mesh.apply_transform(object_pose)
 
-        print("plane mesh vertices", plane_mesh.vertices)
-
         scene_mesh = trimesh.util.concatenate([plane_mesh, transformed_object_mesh])
 
         # create forward model for scene mesh + camera positions
@@ -252,6 +250,7 @@ def generate_random_poses(
     object_poses = []
     pose_idx = 0
     rejected_samples = 0
+    pose_sampling_progress = tqdm(total=n_poses, desc="Generating object poses")
     while pose_idx < n_poses:
         translation = [
             center_t[0] + np.random.uniform(t_ranges["x"][0], t_ranges["x"][1]),
@@ -298,6 +297,7 @@ def generate_random_poses(
 
         object_poses.append(tf_homog)
         pose_idx += 1
+        pose_sampling_progress.update(1)
 
     if rejected_samples > 0:
         print(f"Rejected {rejected_samples} samples due to constraint violations.")

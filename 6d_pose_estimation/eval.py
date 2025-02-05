@@ -17,7 +17,7 @@ from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
 from PIL import Image
 from tqdm import tqdm
-from util import homog_inv, create_plane_mesh, convert_json_to_meshhist_pose_format
+from util import homog_inv, create_plane_mesh, convert_json_to_meshhist_pose_format, vis_hists
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -377,15 +377,6 @@ def optimize(
 
     return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
 
-
-def vis_hists(hists1, hists2=None, title=""):
-    fig, ax = plt.subplots(hists1.shape[0], 1)
-    for hist1, axis in zip(hists1, ax):
-        axis.plot(hist1.detach().cpu().numpy(), label="hist1", color="tab:blue")
-    for hist2, axis in zip(hists2, ax):
-        axis.plot(hist2.detach().cpu().numpy(), label="hist2", color="tab:orange")
-    fig.suptitle(title)
-    plt.show()
 
 
 def visualize_results(

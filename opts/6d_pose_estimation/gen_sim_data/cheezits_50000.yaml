@@ -2,7 +2,7 @@
 constraint: object_on_surface
 gen_previews: false
 mesh_path: data/obj_meshes/003_cracker_box/google_16k/nontextured.stl
-n_obj_poses: 1000
+n_obj_poses: 50000
 num_hist_bins: 128
 real_dataset_path: data/real_data/6d_pose/YCB/cheezits_refined_gt
 t_noise_level: 0.015

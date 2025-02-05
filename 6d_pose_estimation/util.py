@@ -1,5 +1,6 @@
 from typing import List, Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
@@ -102,7 +103,7 @@ def create_plane_mesh(
     d: float,
     x_bounds: Tuple[float, float] = (-5, 5),
     y_bounds: Tuple[float, float] = (-5, 5),
-# ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+    # ) -> o3d.cpu.pybind.geometry.TriangleMesh:
 ) -> o3d.geometry.TriangleMesh:
     """
     Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
@@ -128,6 +129,7 @@ def create_plane_mesh(
 
     return mesh
 
+
 def square_distance(src, dst):
     """
     Taken from E6SD
@@ -148,9 +150,10 @@ def square_distance(src, dst):
     B, N, _ = src.shape
     _, M, _ = dst.shape
     dist = -2 * torch.matmul(src, dst.permute(0, 2, 1))
-    dist += torch.sum(src ** 2, -1).view(B, N, 1)
-    dist += torch.sum(dst ** 2, -1).view(B, 1, M)
+    dist += torch.sum(src**2, -1).view(B, N, 1)
+    dist += torch.sum(dst**2, -1).view(B, 1, M)
     return dist
+
 
 def knn_one_point(xyz, new_xyz):
     """
@@ -161,3 +164,13 @@ def knn_one_point(xyz, new_xyz):
     """
     sqrdists = square_distance(xyz, new_xyz)
     return sqrdists.argmin(dim=2)
+
+
+def vis_hists(hists1, hists2=None, title=""):
+    fig, ax = plt.subplots(hists1.shape[0], 1)
+    for hist1, axis in zip(hists1, ax):
+        axis.plot(hist1.detach().cpu().numpy(), label="hist1", color="tab:blue")
+    for hist2, axis in zip(hists2, ax):
+        axis.plot(hist2.detach().cpu().numpy(), label="hist2", color="tab:orange")
+    fig.suptitle(title)
+    plt.show()
