@@ -13,3 +13,9 @@ real_path: data/real_data/6d_pose/colored_twos/matte_white_refined_gt
 rot_type: 6d
 save_model_interval: 50
 symmetric_object: false
+optimizer:
+  lr: 1e-3
+  weight_decay: 1e-4
+scheduler:
+  step_size: 5000
+  gamma: 0.8

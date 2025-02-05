@@ -26,8 +26,7 @@ import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 
 wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
@@ -43,6 +42,8 @@ def train(
     epochs: int,
     batch_size: int,
     save_model_interval: int,
+    optimizer_params: dict,
+    scheduler_params: dict,
     noise_level: float = 0.00,
     include_hist_idxs: list | str = "all",
     test_interval: int = 1,
@@ -130,8 +131,12 @@ def train(
     model = PoseEstimation6DModel(device=device, num_cameras=train_dataset.histograms.shape[1]).to(
         device
     )
-    optimizer = optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=5000, gamma=0.8)
+    optimizer = optim.Adam(
+        model.parameters(), lr=optimizer_params["lr"], weight_decay=optimizer_params["weight_decay"]
+    )
+    scheduler = lr_scheduler.StepLR(
+        optimizer, step_size=scheduler_params["step_size"], gamma=scheduler_params["gamma"]
+    )
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
 
@@ -224,10 +229,7 @@ def train(
 
                 # Update progress bar
                 pbar.update(1)
-                pbar.set_postfix(
-                    epoch=epoch + 1,
-                    train_loss=loss.item()
-                )
+                pbar.set_postfix(epoch=epoch + 1, train_loss=loss.item())
 
             scheduler.step()
 
@@ -419,4 +421,6 @@ if __name__ == "__main__":
         loss_type=opts["loss_type"],
         mesh_sample_count=opts["mesh_sample_count"],
         symmetric_object=opts["symmetric_object"],
+        optimizer_params=opts["optimizer"],
+        scheduler_params=opts["scheduler"],
     )
