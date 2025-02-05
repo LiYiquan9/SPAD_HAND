@@ -14,6 +14,7 @@ import trimesh
 import yaml
 from tqdm import tqdm
 from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
+import random
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -74,6 +75,7 @@ def gen_sim_dataset(
 
     # load plane model, mesh, and object mesh
     plane_mesh = trimesh.load(os.path.join(real_dataset_path, "001", "gt", "plane.obj"))
+    plane_mesh = plane_mesh.subdivide_loop(5)
     with open(os.path.join(real_dataset_path, "001", "gt", "plane_model.json")) as f:
         plane_params = json.load(f)
     object_mesh = trimesh.load(mesh_path)
@@ -97,7 +99,9 @@ def gen_sim_dataset(
 
     # (n_object_poses, n_cameras, n_bins)
     all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), num_hist_bins))
-
+    # object_albedos = np.random.uniform(0.1, 1.5, size=object_poses.shape[0])
+    object_albedos = np.ones(object_poses.shape[0]) * 1.15
+    
     for object_pose_idx, object_pose in tqdm(
         enumerate(object_poses), total=len(object_poses), desc="Generating simulated data"
     ):
@@ -115,14 +119,28 @@ def gen_sim_dataset(
                 "translations": cam_translations + t_noise,
                 "camera_ids": np.arange(len(poses_homog)),
             },
-            mesh_info={
-                "vertices": scene_mesh.vertices,
-                "faces": scene_mesh.faces,
-                "face_normals": scene_mesh.face_normals,
-                "vert_normals": scene_mesh.vertex_normals,
+            # mesh_info={
+            #     "vertices": scene_mesh.vertices,
+            #     "faces": scene_mesh.faces,
+            #     "face_normals": scene_mesh.face_normals,
+            #     "vert_normals": scene_mesh.vertex_normals,
+            # },
+                mesh_info={
+                "vertices": transformed_object_mesh.vertices,
+                "faces": transformed_object_mesh.faces,
+                "face_normals": transformed_object_mesh.face_normals,
+                "vert_normals": transformed_object_mesh.vertex_normals,
+            },
+            background_mesh={
+                "vertices": plane_mesh.vertices,
+                "faces": plane_mesh.faces,
+                "face_normals": plane_mesh.face_normals,
+                "vert_normals": plane_mesh.vertex_normals,
             },
             with_bin_scaling=False,
             num_bins=num_hist_bins,
+            albedo_obj=object_albedos[object_pose_idx],
+            albedo_bg=1.15,
         )
 
         # render histograms
@@ -164,6 +182,7 @@ def gen_sim_dataset(
         os.path.join(output_dir, "simulated_data.npz"),
         histograms=all_rendered_hists,
         object_poses=object_poses,
+        object_albedos=object_albedos,
     )
 
     # save metadata about the simulation

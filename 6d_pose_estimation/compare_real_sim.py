@@ -10,8 +10,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import trimesh
 from util import convert_json_to_meshhist_pose_format
-
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from spad_mesh.sim.model import MeshHist
+from gen_sim_dataset import sim_data_adjustment
+from scipy.spatial import Delaunay
 
 TEMP_SCENE_MESH_PATH = "data/TEMP_scene_mesh.npz"
 TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
@@ -19,7 +22,22 @@ TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
 
 def vis_sim_data(real_data_path: str, show: bool = False):
     # load scene mesh from obj file and save in the .npz format expected by MeshHist
-    scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
+    # scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
+    
+    plane_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane.obj"))
+    
+    # plane_mesh = plane_mesh.subdivide()
+    plane_mesh = plane_mesh.subdivide_loop(10)
+
+    scene_mesh = plane_mesh
+    
+    # plane_mesh = plane_mesh.subdivide()
+    
+    # new_plane_points = trimesh.sample.sample_surface_even(plane_mesh, 50000)[0]
+    # tri = Delaunay(new_plane_points[:, :2])
+    # plane_mesh = trimesh.Trimesh(vertices=new_plane_points, faces=tri.simplices) 
+
+    # object_mesh = trimesh.load(os.path.join(real_data_path, "gt", "object.obj"))
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(real_data_path, "tmf.json")) as f:
@@ -42,18 +60,32 @@ def vis_sim_data(real_data_path: str, show: bool = False):
             "face_normals": scene_mesh.face_normals,
             "vert_normals": scene_mesh.vertex_normals,
         },
+        # mesh_info={
+        #     "vertices": object_mesh.vertices,
+        #     "faces": object_mesh.faces,
+        #     "face_normals": object_mesh.face_normals,
+        #     "vert_normals": object_mesh.vertex_normals,
+        # },
+        # background_mesh={
+        #     "vertices": plane_mesh.vertices,
+        #     "faces": plane_mesh.faces,
+        #     "face_normals": plane_mesh.face_normals,
+        #     "vert_normals": plane_mesh.vertex_normals,
+        # },
         with_bin_scaling=False,
+        albedo_obj=1.15,
     )
 
     rendered_hists = (
         forward_model(None, None, "6d_pose_estimation/results/test.png").detach().cpu().numpy()
     )
-
+    rendered_hists = sim_data_adjustment(rendered_hists)
+    
     # get real histograms from real data
     real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
     # pool zones in real data
     real_hists = real_hists.sum(axis=1)
-    real_hists = real_hists * 0.00000035 
+    real_hists = real_hists * 0.00000035 - 0.0006
 
     subplot_rows = int(forward_model.num_cameras / 2 + 0.5)
     subplot_cols = 2

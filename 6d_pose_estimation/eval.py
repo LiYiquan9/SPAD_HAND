@@ -315,13 +315,16 @@ def optimize(
     [0.00263098 0.01105693 0.99993541]
     [0.00263102 0.01105689 0.99993541]]
     """
-
+    albedo_obj = torch.tensor([1.0]).float().cuda()
+    albedo_bg = torch.tensor([1.15]).float().cuda()
+    
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
 
     translation.requires_grad = True
     rotation.requires_grad = True
+    albedo_obj.requires_grad = True
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(sensor_plane_path, "tmf.json")) as f:
@@ -357,12 +360,13 @@ def optimize(
         [
             {"params": translation, "lr": 1e-3},
             {"params": rotation, "lr": 1e-2},
+            {"params": albedo_obj, "lr": 1e-2},
         ]
     )
     losses = []
     opt_steps = 100
     for i in range(opt_steps):
-        rendered_hists = layer(rotation, translation)
+        rendered_hists = layer(rotation, translation, None, albedo_obj, albedo_bg)
         if include_hist_idxs != "all":
             rendered_hists = rendered_hists[include_hist_idxs, :]
 

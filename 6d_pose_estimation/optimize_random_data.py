@@ -27,11 +27,20 @@ def optimize_pose(
     obj_path: str,
     rot_noise: float = 0.3,
     trans_noise: float = 0.05,
-    opt_steps: int = 2000,
+    opt_steps: int = 200,
 ) -> None:
 
     scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
 
+    plane_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane.obj"))
+    
+    plane_mesh = plane_mesh.subdivide_loop(10)
+    
+    transformed_object_mesh = trimesh.load(os.path.join(real_data_path, "gt", "object.obj"))
+
+    albedo_obj = torch.tensor([1.0]).float().cuda()
+    albedo_bg = torch.tensor([1.15]).float().cuda()
+    
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(real_data_path, "tmf.json")) as f:
         tmf_data = json.load(f)
@@ -47,60 +56,12 @@ def optimize_pose(
             "translations": cam_translations,
             "camera_ids": np.arange(len(poses_homog)),
         },
-        mesh_info={
-            "vertices": scene_mesh.vertices,
-            "faces": scene_mesh.faces,
-            "face_normals": scene_mesh.face_normals,
-            "vert_normals": scene_mesh.vertex_normals,
-        },
-        with_bin_scaling=False,
-    )
-
-    rendered_hists = (
-        forward_model(None, None, "results/verify_optimization/gt_sim.png").detach().cpu().numpy()
-    )
-
-    # get real histograms from real data
-    real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
-    # pool zones in real data
-    real_hists = real_hists.sum(axis=1)
-    real_hists = real_hists * 0.00000035 - 0.0006  # background light subtraction
-    real_hists = torch.from_numpy(real_hists).float().cuda()
-
-    rendered_hists = np.roll(rendered_hists, shift=1, axis=1)
-    rendered_hists = torch.from_numpy(rendered_hists).float().cuda()
-
-    # generate sim data to be optimized
-    plane_mesh = trimesh.load(f"{real_data_path}/gt/plane.obj")
-
-    object_mesh = trimesh.load(obj_path)
-
-    gt_pose = np.load(os.path.join(real_data_path, "gt", "gt_pose.npy"))
-    gt_translation = torch.from_numpy(gt_pose[:3, 3]).float().cuda()
-
-    gt_rotation = (
-        matrix_to_rotation_6d(torch.from_numpy(gt_pose[:3, :3])).resize(2, 3).float().cuda()
-    )
-    rotation = gt_rotation + torch.randn_like(gt_rotation) * rot_noise
-    rotation = F.normalize(rotation.view(-1), dim=0).view(2, 3)
-
-    translation = (
-        torch.from_numpy(gt_pose[:3, 3] + np.random.randn(*gt_pose[:3, 3].shape) * trans_noise)
-        .float()
-        .cuda()
-    )
-
-    init_rotation = rotation.clone()
-    init_translation = translation.clone()
-
-    transformed_object_mesh = object_mesh.copy()
-
-    layer = MeshHist(
-        camera_config={
-            "rotations": cam_rotations,
-            "translations": cam_translations,
-            "camera_ids": np.arange(len(poses_homog)),
-        },
+        # mesh_info={
+        #     "vertices": scene_mesh.vertices,
+        #     "faces": scene_mesh.faces,
+        #     "face_normals": scene_mesh.face_normals,
+        #     "vert_normals": scene_mesh.vertex_normals,
+        # },
         mesh_info={
             "vertices": transformed_object_mesh.vertices,
             "faces": transformed_object_mesh.faces,
@@ -116,8 +77,68 @@ def optimize_pose(
         with_bin_scaling=False,
     )
 
+    rendered_hists = (
+        forward_model(None, None, "results/verify_optimization/gt_sim.png", albedo_obj, albedo_bg).detach().cpu().numpy()
+    )
+
+    # get real histograms from real data
+    real_hists = np.array([np.array(measurement["hists"]) for measurement in tmf_data])
+    # pool zones in real data
+    real_hists = real_hists.sum(axis=1)
+    real_hists = real_hists * 0.00000035 - 0.0006  # background light subtraction
+    real_hists = torch.from_numpy(real_hists).float().cuda()
+
+    rendered_hists = np.roll(rendered_hists, shift=1, axis=1)
+    rendered_hists = torch.from_numpy(rendered_hists).float().cuda()
+
+    # generate sim data to be optimized
+    # plane_mesh = trimesh.load(f"{real_data_path}/gt/plane.obj")
+
+    object_mesh = trimesh.load(obj_path)
+
+    gt_pose = np.load(os.path.join(real_data_path, "gt", "gt_pose.npy"))
+    gt_translation = torch.from_numpy(gt_pose[:3, 3]).float().cuda()
+
+    gt_rotation = (
+        matrix_to_rotation_6d(torch.from_numpy(gt_pose[:3, :3])).resize(2, 3).float().cuda()
+    )
+    rotation = gt_rotation + torch.randn_like(gt_rotation) * rot_noise 
+    rotation = F.normalize(rotation.view(-1), dim=0).view(2, 3)
+
+    translation = (
+        torch.from_numpy(gt_pose[:3, 3] + np.random.randn(*gt_pose[:3, 3].shape) * trans_noise)
+        .float()
+        .cuda()
+    )
+
+    init_rotation = rotation.clone()
+    init_translation = translation.clone()
+
+
+    layer = MeshHist(
+        camera_config={
+            "rotations": cam_rotations,
+            "translations": cam_translations,
+            "camera_ids": np.arange(len(poses_homog)),
+        },
+        mesh_info={
+            "vertices": object_mesh.vertices,
+            "faces": object_mesh.faces,
+            "face_normals": object_mesh.face_normals,
+            "vert_normals": object_mesh.vertex_normals,
+        },
+        background_mesh={
+            "vertices": plane_mesh.vertices,
+            "faces": plane_mesh.faces,
+            "face_normals": plane_mesh.face_normals,
+            "vert_normals": plane_mesh.vertex_normals,
+        },
+        with_bin_scaling=False,
+    )
+
+    
     hists_before = (
-        layer(rotation, translation, "results/verify_optimization/before.png")
+        layer(rotation, translation, "results/verify_optimization/before.png", albedo_obj, albedo_bg)
         .detach()
         .cpu()
         .numpy()
@@ -126,26 +147,35 @@ def optimize_pose(
 
     translation.requires_grad = True
     rotation.requires_grad = True
-    # layer.albedo.requires_grad = True
+    albedo_obj.requires_grad = True
+    # albedo_bg.requires_grad = True
+    
     optimizer = torch.optim.Adam(
         [
-            {"params": translation, "lr": 1e-2},
-            # {"params": layer.albedo, "lr": 1e-2},
-            {"params": rotation, "lr": 1e-2},
+            {"params": translation, "lr": 5e-1},
+            {"params": rotation, "lr": 5e-1},
+            {"params": albedo_obj, "lr": 1e-1},
         ]
     )
     losses = []
-    for i in trange(opt_steps // layer.num_cameras):
-        hists = layer(rotation, translation)
+    include_hist_idxs = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+    
+    for i in trange(opt_steps):
+        hists = layer(rotation, translation, None, albedo_obj, albedo_bg)
         hists = torch.roll(hists, shifts=1, dims=1)
-        loss = torch.nn.MSELoss()(hists, real_hists)
+        
+        hists_loss = hists[include_hist_idxs, :]
+        real_hists_loss = real_hists[include_hist_idxs, :]
+
+        loss = torch.nn.MSELoss()(hists_loss, real_hists_loss)
+        print(loss.item())
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
     hists_after = (
-        layer(rotation, translation, "results/verify_optimization/after.png").detach().cpu().numpy()
+        layer(rotation, translation, "results/verify_optimization/after.png",albedo_obj,albedo_bg).detach().cpu().numpy()
     )
     hists_after = np.roll(hists_after, shift=1, axis=1)
 
@@ -155,6 +185,8 @@ def optimize_pose(
     print("opt translation: ", translation)
     print("gt translation: ", gt_translation)
     print("init translation: ", init_translation)
+    print("gt albedo: ", albedo_obj)
+    print("init albedo: ", 1.0)
 
     # Helper function to apply transformations
     def apply_transformation(mesh, rotation, translation):
@@ -182,9 +214,9 @@ def optimize_pose(
     # Save the combined mesh as an OBJ file
     combined_mesh.export("results/verify_optimization/3_mesh.obj")
 
-    print(layer.albedo)
-    print(loss.item())
-    plt.plot(losses)
+
+    # print(loss.item())
+    # plt.plot(losses)
     plt.savefig("results/verify_optimization/losses.png")
     plt.cla()
 

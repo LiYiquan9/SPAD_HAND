@@ -57,6 +57,7 @@ class PoseEstimation6DDataset(Dataset):
                 data = np.load(f)
                 self.histograms = data["histograms"]  # (n_samples, n_cameras, n_bins)
                 self.object_poses = data["object_poses"]  # (n_samples, 4, 4) (homog. matrix)
+                self.object_albedos = data["object_albedos"]  # (n_samples,)
 
         elif self.dset_type == "real":
             self.histograms = []
@@ -87,6 +88,7 @@ class PoseEstimation6DDataset(Dataset):
 
             self.histograms = np.concatenate(self.histograms, axis=0)
             self.object_poses = np.concatenate(self.object_poses, axis=0)
+            self.object_albedos = np.ones(self.histograms.shape[0])*0.7
 
         # exclude certain histograms if necessary
         if include_hist_idxs != "all":
@@ -120,9 +122,11 @@ class PoseEstimation6DDataset(Dataset):
         if self.split == "train":
             self.histograms = self.histograms[train_indices]
             self.object_poses = self.object_poses[train_indices]
+            self.object_albedos = self.object_albedos[train_indices]
         elif self.split == "test":
             self.histograms = self.histograms[test_indices]
             self.object_poses = self.object_poses[test_indices]
+            self.object_albedos = self.object_albedos[test_indices]
         # if split is all, keep histograms and object poses complete
 
         if self.dset_type == "real":
@@ -137,6 +141,6 @@ class PoseEstimation6DDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         if self.dset_type == "real":
-            return self.histograms[idx], self.object_poses[idx], self.filenames[idx]
+            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx], self.filenames[idx]
         else:
-            return self.histograms[idx], self.object_poses[idx]
+            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx]

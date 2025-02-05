@@ -164,7 +164,7 @@ def train(
         for epoch in range(epochs):
             model.train()
 
-            for batch_idx, (hists, labels) in enumerate(trainloader):
+            for batch_idx, (hists, labels, albedos) in enumerate(trainloader):
                 noise = torch.randn(hists.size()).to(device) * noise_level
 
                 hists = torch.tensor(hists).float().to(device)
@@ -173,7 +173,8 @@ def train(
                 hists = self_norm(hists).float()
 
                 labels = torch.tensor(labels).float().to(device)
-
+                albedos = torch.tensor(albedos).float().to(device)
+                
                 optimizer.zero_grad()
                 outputs = model(hists)
 
@@ -236,12 +237,13 @@ def train(
             if (epoch + 1) % test_interval == 0:
                 model.eval()
 
-                for batch_idx, (hists, labels) in enumerate(testloader):
+                for batch_idx, (hists, labels, albedos) in enumerate(testloader):
                     hists = torch.tensor(hists).float().to(device)
                     hists = self_norm(hists).float()
                     # hists = normalize_hists(hists).float()
                     labels = torch.tensor(labels).float().to(device)
-
+                    albedos = torch.tensor(albedos).float().to(device)
+                    
                     outputs = model(hists)
 
                     if rot_type == "6d":
@@ -286,12 +288,13 @@ def train(
                     )
 
                     if check_real:
-                        for batch_idx, (hists, labels, filenames) in enumerate(real_testloader):
+                        for batch_idx, (hists, labels, albedos, filenames) in enumerate(real_testloader):
                             hists = torch.tensor(hists).float().to(device)
                             hists = self_norm(hists).float()
                             # hists = normalize_hists(hists).float()
                             labels = torch.tensor(labels).float().to(device)
-
+                            albedos = torch.tensor(albedos).float().to(device)
+                            
                             outputs = model(hists)
 
                             if rot_type == "6d":
