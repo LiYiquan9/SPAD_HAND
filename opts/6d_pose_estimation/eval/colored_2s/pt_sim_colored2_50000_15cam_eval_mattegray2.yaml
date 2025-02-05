@@ -9,5 +9,6 @@ rot_type: 6d
 save_opt: true
 sensor_plane_path: data/real_data/6d_pose/colored_twos/matte_gray_refined_gt/001
 subsample_n_test_samples: 0 # 0 means do all test samples
+symmetric_object: false
 test_on_split: all
 training_path: 6d_pose_estimation/results/train/pt_sim_colored2_50000_15cam/model_499.pth

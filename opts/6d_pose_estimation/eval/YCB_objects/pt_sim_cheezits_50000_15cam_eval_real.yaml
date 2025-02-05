@@ -8,6 +8,7 @@ obj_path: data/obj_meshes/003_cracker_box/google_16k/nontextured.stl
 rot_type: 6d
 save_opt: true
 sensor_plane_path: data/real_data/6d_pose/YCB/cheezits_refined_gt/001
+symmetric_object: true
 subsample_n_test_samples: 0 # 0 means do all test samples
 test_on_split: all
 training_path: 6d_pose_estimation/results/train/pt_sim_cheezits_50000_15cam/model_499.pth

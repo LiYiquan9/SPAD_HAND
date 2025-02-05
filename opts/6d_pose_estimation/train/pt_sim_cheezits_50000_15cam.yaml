@@ -16,6 +16,7 @@ rot_type: 6d
 save_model_interval: 50
 standardize_input: false
 subtract_dc_offset_from_real: true
+symmetric_object: true
 trim_to_range:
 - 0
 - 128

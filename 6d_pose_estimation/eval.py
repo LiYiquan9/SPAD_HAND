@@ -56,6 +56,7 @@ def test(
     sensor_plane_path: str = "",
     subsample_n_test_samples: int = 0,
     include_hist_idxs: list | str = "all",
+    symmetric_object: bool = False,
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -75,6 +76,8 @@ def test(
         subsample_n_test_samples (int): If > 0, only use this many test samples, the rest will be
             discarded. Useful for faster eval.
         include_hist_idxs (list, optional): If a list, only include the histograms at these indices.
+        symmetric_object (bool): If True, the object is symmetric. Changes what metrics are used
+            for eval.
 
     Returns:
         None
@@ -111,19 +114,11 @@ def test(
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
         flat_label = np.concatenate([label_ortho6d, label_translation])
-        # print(flat_label)
         test_labels.append(torch.from_numpy(flat_label))
     test_labels = torch.stack(test_labels).to(device)
     test_labels_avg = torch.mean(test_labels, dim=0)
 
     print(f"Testing dataset has {len(test_dataset)} samples")
-
-    # results = np.load(f"{training_path}/mean_std_data.npz")
-    # MEAN = torch.tensor(results["mean"]).to(device)
-    # STD = torch.tensor(results["std"]).to(device)
-
-    # def normalize_hists(hists):
-    #     return (hists - MEAN) / (STD + 3e-9)
 
     inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
     all_results = {inference_type: [] for inference_type in inference_modes}
@@ -151,7 +146,6 @@ def test(
             raw_input_hists = raw_input_hists.float().to(device)
             self_norm_hists = self_norm(raw_input_hists)
             norm_input_hists = self_norm_hists
-            # norm_input_hists = normalize_hists(self_norm_hists).float()
             labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":
@@ -228,6 +222,12 @@ def test(
             compute_auc_add(all_results[inference_mode])
         )
 
+    # if the object is symmetric, some of the metrics are not valid - remove them to avoid confusion
+    if symmetric_object:
+        for inference_mode in inference_modes:
+            del summary_metrics[inference_mode]["ADD"]
+            del summary_metrics[inference_mode]["rotation_error"]
+
     with open(f"{output_dir}/summary_metrics.json", "w") as f:
         json.dump(summary_metrics, f, indent=4)
 
@@ -237,7 +237,12 @@ def test(
         json.dump(all_results, f, indent=4)
 
     # generate plots and visualizations for results
-    plot_metrics(all_results, os.path.join(output_dir, "plots"), pred_metrics.keys())
+    plot_metrics(
+        all_results,
+        os.path.join(output_dir, "plots"),
+        pred_metrics.keys(),
+        symmetric_object=symmetric_object,
+    )
     visualize_results(
         all_results,
         os.path.join(output_dir, "visualizations"),
@@ -376,7 +381,6 @@ def optimize(
         optimizer.step()
 
     return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
-
 
 
 def visualize_results(
@@ -632,7 +636,9 @@ def create_plane_mesh(
     return mesh
 
 
-def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
+def plot_metrics(
+    all_results: dict, output_dir: str, metrics: list, symmetric_object: bool = False
+) -> None:
     """
     For each metric and each inference mode, plot the distribution of the metric as a histogram.
 
@@ -640,10 +646,14 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         all_results (dict): Dictionary containing the results of the model predictions
         output_dir (str): Directory to save the plots
         metrics (list): List of metrics to plot
+        symmetric_object (bool): If True, the object is symmetric. Changes what metrics are used.
     """
     inference_modes = list(all_results.keys())
 
     os.makedirs(output_dir, exist_ok=True)
+
+    if symmetric_object:
+        metrics = [metric for metric in metrics if metric not in ["ADD", "rotation_error"]]
 
     for metric in metrics:
         fig, ax = plt.subplots(1, len(inference_modes), figsize=(5 * len(inference_modes), 5))
@@ -665,7 +675,11 @@ def plot_metrics(all_results: dict, output_dir: str, metrics: list) -> None:
         plt.savefig(os.path.join(output_dir, f"{metric}.png"))
 
     # Plot AUC-ADD curves
-    for add in ["ADD", "ADD-S"]:
+    if symmetric_object:
+        auc_metrics = ["ADD-S"]
+    else:
+        auc_metrics = ["ADD", "ADD-S"]
+    for add in auc_metrics:
         auc_add_thresholds = np.linspace(0, 0.1, 100)
         plt.figure(figsize=(8, 6))
         for inference_mode in all_results.keys():
@@ -819,4 +833,5 @@ if __name__ == "__main__":
         sensor_plane_path=opts["sensor_plane_path"],
         subsample_n_test_samples=opts["subsample_n_test_samples"],
         include_hist_idxs=opts["include_hist_idxs"],
+        symmetric_object=opts["symmetric_object"],
     )

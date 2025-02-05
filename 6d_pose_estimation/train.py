@@ -52,6 +52,7 @@ def train(
     real_path: str = "",
     loss_type: str = "rot_trans_pcd",
     mesh_sample_count: int = 1000,
+    symmetric_object: bool = False,
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -71,10 +72,16 @@ def train(
         real_path (str): Path to the real data, if check_real is True
         loss (str): Type of loss to use
         mesh_sample_count (int): Number of points to sample from the object mesh for ADD-S loss
+        symmetric_object (bool): Whether the object is symmetric
 
     Returns:
         None
     """
+
+    if symmetric_object and loss_type != "ADD_S":
+        raise ValueError(f"Attempting to use inappropriate loss ({loss_type}) for symmetric object")
+    elif not symmetric_object and loss_type == "ADD_S":
+        raise ValueError(f"Attempting to use ADD-S loss with non-symmetric object")
 
     logging.basicConfig(
         filename=f"{output_dir}/training_log.log",
@@ -133,25 +140,12 @@ def train(
     ):
         if loss_type == "rot_trans_pcd":
             rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
-            # rot_loss = torch.mean(torch.norm(outputs_rot_matrix - labels_rot_matrix, dim=1))
             trans_loss = l1_loss(outputs_trans, labels_trans)
             pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
 
             loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
 
         elif loss_type == "ADD_S":
-            # # visualize output_obj_pc and labels_obj_pc in same window with open3d
-            # output_obj_pc = outputs_obj_pc[0].cpu().detach().numpy()
-            # label_obj_pc = labels_obj_pc[0].cpu().detach().numpy()
-
-            # # draw just the first sample in the batch
-            # output_obj_pc_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(output_obj_pc))
-            # output_obj_pc_o3d.paint_uniform_color([1, 0, 0]) # model prediction is red
-            # label_obj_pc_o3d = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(label_obj_pc))
-            # label_obj_pc_o3d.paint_uniform_color([0, 1, 0]) # ground truth is green
-
-            # o3d.visualization.draw_geometries([output_obj_pc_o3d, label_obj_pc_o3d])
-
             loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
 
         else:
@@ -210,7 +204,7 @@ def train(
 
                 wandb.log(
                     {
-                        "train_total_loss": loss.item(),
+                        f"train_loss_{loss_type}": loss.item(),
                     }
                 )
 
@@ -267,7 +261,7 @@ def train(
 
                     wandb.log(
                         {
-                            "test_total_loss": loss.item(),
+                            f"test_loss_{loss_type}": loss.item(),
                         }
                     )
 
@@ -328,7 +322,7 @@ def train(
 
                             wandb.log(
                                 {
-                                    "real_test_total_loss": loss.item(),
+                                    f"real_test_loss_{loss_type}": loss.item(),
                                 }
                             )
 
@@ -424,4 +418,5 @@ if __name__ == "__main__":
         include_hist_idxs=opts["include_hist_idxs"],
         loss_type=opts["loss_type"],
         mesh_sample_count=opts["mesh_sample_count"],
+        symmetric_object=opts["symmetric_object"],
     )
