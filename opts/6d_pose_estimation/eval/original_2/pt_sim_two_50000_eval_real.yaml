@@ -12,3 +12,8 @@ subsample_n_test_samples: 0 # 0 means do all test samples
 symmetric_object: false
 test_on_split: all
 training_path: 6d_pose_estimation/results/train/pt_sim_two_50000/model_499.pth
+opt_params:
+  translation_lr: 0.001
+  rotation_lr: 0.01
+  albedo_obj_lr: 0.01
+  opt_steps: 100

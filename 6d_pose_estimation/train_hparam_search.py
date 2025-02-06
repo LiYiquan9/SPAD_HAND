@@ -24,9 +24,13 @@ def objective(config):
     global instance_idx
 
     train_path = os.path.join(
-        "6d_pose_estimation/results/hparam_search", START_TIME, f"{instance_idx:03d}"
+        "6d_pose_estimation/results/train_hparam_search/train", START_TIME, f"{instance_idx:03d}"
     )
     os.makedirs(train_path, exist_ok=True)
+    test_path = os.path.join(
+        "6d_pose_estimation/results/train_hparam_search/eval", START_TIME, f"{instance_idx:03d}"
+    )
+    os.makedirs(test_path, exist_ok=True)
 
     train(
         config["dset_path"],
@@ -66,15 +70,16 @@ def objective(config):
         include_hist_idxs=test_opts["include_hist_idxs"],
         sensor_plane_path=test_opts["sensor_plane_path"],
         # things that are fixed
-        output_dir="6d_pose_estimation/results/hparam_search/eval_tmp",
+        output_dir=test_path,
         training_path=os.path.join(train_path, "model_final.pth"),
         num_samples_to_vis=0,
+        do_optimize=False,
         # subsample_n_test_samples=5, # just to speed up testing the script
     )
 
     instance_idx += 1
 
-    with open("6d_pose_estimation/results/hparam_search/eval_tmp/summary_metrics.json", "rb") as f:
+    with open(os.path.join(test_path, "summary_metrics.json"), "rb") as f:
         file_contents = json.load(f)
         return file_contents
 
@@ -86,26 +91,16 @@ def main():
         wandb.log(
             {
                 "supervised_AUC-ADD-S": results["supervised_model"]["AUC-ADD-S"],
-                "supervised_and_opt_AUC-ADD-S": results["supervised_and_optimize"]["AUC-ADD-S"],
                 "supervised_mean_ADD-S": results["supervised_model"]["ADD-S"]["mean"],
-                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"][
-                    "mean"
-                ],
             }
         )
     else:
         wandb.log(
             {
                 "supervised_AUC-ADD-S": results["supervised_model"]["AUC-ADD-S"],
-                "supervised_and_opt_AUC-ADD-S": results["supervised_and_optimize"]["AUC-ADD-S"],
                 "supervised_mean_ADD-S": results["supervised_model"]["ADD-S"]["mean"],
-                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"][
-                    "mean"
-                ],
                 "supervised_AUC-ADD": results["supervised_model"]["AUC-ADD"],
-                "supervised_and_opt_AUC-ADD": results["supervised_and_optimize"]["AUC-ADD"],
                 "supervised_mean_ADD": results["supervised_model"]["ADD"]["mean"],
-                "supervised_and_opt_mean_ADD": results["supervised_and_optimize"]["ADD"]["mean"],
             }
         )
 
@@ -160,7 +155,7 @@ sweep_configuration = {
     "method": "grid",
     "metric": {
         "goal": "maximize",
-        "name": f"supervised_and_opt_{'AUC-ADD-S' if train_opts['symmetric_object'] else 'AUC-ADD'}",
+        "name": f"supervised_{'AUC-ADD-S' if train_opts['symmetric_object'] else 'AUC-ADD'}",
     },
     "parameters": sweep_parameters,
 }

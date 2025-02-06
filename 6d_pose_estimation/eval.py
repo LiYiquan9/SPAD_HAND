@@ -48,6 +48,7 @@ def test(
     output_dir: str,
     batch_size: int,
     training_path: str,
+    opt_params: dict,
     noise_level: float = 0.00,
     rot_type: str = "6d",
     obj_path: str = "",
@@ -57,6 +58,7 @@ def test(
     subsample_n_test_samples: int = 0,
     include_hist_idxs: list | str = "all",
     symmetric_object: bool = False,
+    do_optimize: bool = True,
 ) -> None:
     """
     Test a 6D pose estimation model (works on real or simulated data)
@@ -67,6 +69,7 @@ def test(
         output_dir (str): Directory to save model checkpoints and logs
         batch_size (int): Batch size
         training_path (str): Path to the directory containing the trained model
+        opt_params (dict): Dictionary of hyperparameters for the optimization (render and compare)
         noise_level (float): Noise level to add to the input data
         rot_type (str): Type of rotation representation to use
         obj_path (str): Path to the object mesh file
@@ -78,6 +81,8 @@ def test(
         include_hist_idxs (list, optional): If a list, only include the histograms at these indices.
         symmetric_object (bool): If True, the object is symmetric. Changes what metrics are used
             for eval.
+        do_optimize (bool): If True, optimize the model output using MeshHist and report those
+            results as well
 
     Returns:
         None
@@ -120,7 +125,10 @@ def test(
 
     print(f"Testing dataset has {len(test_dataset)} samples")
 
-    inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
+    if do_optimize:
+        inference_modes = ["supervised_model", "supervised_and_optimize", "test_set_avg"]
+    else:
+        inference_modes = ["supervised_model", "test_set_avg"]
     all_results = {inference_type: [] for inference_type in inference_modes}
 
     # load model
@@ -163,6 +171,7 @@ def test(
                 outputs = optimize(
                     outputs_before_opt,
                     raw_input_hists,
+                    opt_params,
                     sensor_plane_path,
                     obj_path,
                     include_hist_idxs,
@@ -256,6 +265,7 @@ def test(
 def optimize(
     outputs_supervised: torch.Tensor,
     raw_input_hists: torch.Tensor,
+    opt_params: dict,
     sensor_plane_path: str = None,
     obj_path: str = None,
     include_hist_idxs: list | str = "all",
@@ -358,14 +368,16 @@ def optimize(
 
     optimizer = torch.optim.Adam(
         [
-            {"params": translation, "lr": 1e-3},
-            {"params": rotation, "lr": 1e-2},
-            {"params": albedo_obj, "lr": 1e-2},
+            {"params": translation, "lr": opt_params["translation_lr"]},
+            {"params": rotation, "lr": opt_params["rotation_lr"]},
+            {"params": albedo_obj, "lr": opt_params["albedo_obj_lr"]},
         ]
     )
+    # store losses and parameters for each iteration. If use_lowest is true, the parameters which
+    # led to the lowest loss are returned. Otherwise, the final parameters are returned
     losses = []
-    opt_steps = 100
-    for i in range(opt_steps):
+    params = []
+    for i in range(opt_params["opt_steps"]):
         rendered_hists = layer(rotation, translation, None, albedo_obj, albedo_bg)
         if include_hist_idxs != "all":
             rendered_hists = rendered_hists[include_hist_idxs, :]
@@ -379,12 +391,18 @@ def optimize(
         norm_raw_input_hists = self_norm(raw_input_hists)
         loss = torch.nn.MSELoss()(rendered_hists, norm_raw_input_hists[0, :, :])
         losses.append(loss.item())
+        params.append(
+            torch.cat([rotation.reshape(6), translation], dim=-1)[None,].detach()
+        )
         optimizer.zero_grad()
         loss.backward()
-        # print("loss", loss)
         optimizer.step()
 
-    return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
+    if opt_params["use_lowest"]:
+        print(f"idx of lowest loss: {np.argmin(losses)}")
+        return params[np.argmin(losses)]
+    else:
+        return params[-1]
 
 
 def visualize_results(
@@ -838,4 +856,5 @@ if __name__ == "__main__":
         subsample_n_test_samples=opts["subsample_n_test_samples"],
         include_hist_idxs=opts["include_hist_idxs"],
         symmetric_object=opts["symmetric_object"],
+        opt_params=opts["opt_params"],
     )
