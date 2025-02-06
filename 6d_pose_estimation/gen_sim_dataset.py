@@ -46,6 +46,7 @@ def gen_sim_dataset(
     num_hist_bins: int,
     translation_ranges: dict,
     n_obj_poses: int,
+    albedos: dict,
     gen_previews: bool = False,
     constraint: str = None,
     t_noise_level: float = 0.0,
@@ -100,7 +101,7 @@ def gen_sim_dataset(
     # (n_object_poses, n_cameras, n_bins)
     all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), num_hist_bins))
     # object_albedos = np.random.uniform(0.1, 1.5, size=object_poses.shape[0])
-    object_albedos = np.ones(object_poses.shape[0]) * 1.15
+    object_albedos = np.ones(object_poses.shape[0]) * albedos["object"]
     
     for object_pose_idx, object_pose in tqdm(
         enumerate(object_poses), total=len(object_poses), desc="Generating simulated data"
@@ -140,7 +141,7 @@ def gen_sim_dataset(
             with_bin_scaling=False,
             num_bins=num_hist_bins,
             albedo_obj=object_albedos[object_pose_idx],
-            albedo_bg=1.15,
+            albedo_bg=albedos["background"],
         )
 
         # render histograms
@@ -356,4 +357,5 @@ if __name__ == "__main__":
         gen_previews=opts["gen_previews"],
         constraint=opts["constraint"],
         t_noise_level=opts["t_noise_level"],
+        albedos=opts["albedos"],
     )
