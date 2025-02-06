@@ -377,7 +377,7 @@ def optimize(
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
-        print("loss", loss)
+        # print("loss", loss)
         optimizer.step()
 
     return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
