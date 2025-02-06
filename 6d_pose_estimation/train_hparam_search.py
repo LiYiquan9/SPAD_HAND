@@ -10,18 +10,28 @@ import os
 import yaml
 from eval import test
 from train import train
+import time
 
 import wandb
+
+START_TIME = time.strftime("%Y-%m-%d_%H-%M-%S")
+
+instance_idx = 0
 
 
 # objective function that we'd like to minimize
 def objective(config):
-    print("config", config)
+    global instance_idx
+
+    train_path = os.path.join(
+        "6d_pose_estimation/results/hparam_search", START_TIME, f"{instance_idx:03d}"
+    )
+    os.makedirs(train_path, exist_ok=True)
 
     train(
         config["dset_path"],
         config["dset_type"],
-        config["output_dir"],
+        train_path,
         config["epochs"],
         config["batch_size"],
         config["save_model_interval"],
@@ -57,9 +67,12 @@ def objective(config):
         sensor_plane_path=test_opts["sensor_plane_path"],
         # things that are fixed
         output_dir="6d_pose_estimation/results/hparam_search/eval_tmp",
-        training_path="6d_pose_estimation/results/hparam_search/train_tmp/model_final.pth",
+        training_path=os.path.join(train_path, "model_final.pth"),
         num_samples_to_vis=0,
+        # subsample_n_test_samples=5, # just to speed up testing the script
     )
+
+    instance_idx += 1
 
     with open("6d_pose_estimation/results/hparam_search/eval_tmp/summary_metrics.json", "rb") as f:
         file_contents = json.load(f)
@@ -75,7 +88,9 @@ def main():
                 "supervised_AUC-ADD-S": results["supervised_model"]["AUC-ADD-S"],
                 "supervised_and_opt_AUC-ADD-S": results["supervised_and_optimize"]["AUC-ADD-S"],
                 "supervised_mean_ADD-S": results["supervised_model"]["ADD-S"]["mean"],
-                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"]["mean"],
+                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"][
+                    "mean"
+                ],
             }
         )
     else:
@@ -84,13 +99,16 @@ def main():
                 "supervised_AUC-ADD-S": results["supervised_model"]["AUC-ADD-S"],
                 "supervised_and_opt_AUC-ADD-S": results["supervised_and_optimize"]["AUC-ADD-S"],
                 "supervised_mean_ADD-S": results["supervised_model"]["ADD-S"]["mean"],
-                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"]["mean"],
+                "supervised_and_opt_mean_ADD-S": results["supervised_and_optimize"]["ADD-S"][
+                    "mean"
+                ],
                 "supervised_AUC-ADD": results["supervised_model"]["AUC-ADD"],
                 "supervised_and_opt_AUC-ADD": results["supervised_and_optimize"]["AUC-ADD"],
                 "supervised_mean_ADD": results["supervised_model"]["ADD"]["mean"],
                 "supervised_and_opt_mean_ADD": results["supervised_and_optimize"]["ADD"]["mean"],
             }
         )
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -130,7 +148,6 @@ sweep_parameters = {
     # things that are fixed
     "test_interval": {"value": 10000},  # no need to test during training
     "save_model_interval": {"value": 10000},  # no need to save intermediate models
-    "output_dir": {"value": "6d_pose_estimation/results/hparam_search/train_tmp"},
     # things worth ablating
     "noise_level": {"values": [0.0, 0.000001, 0.00001, 0.0001]},
     "lr": {"values": [1e-5, 1e-4, 1e-3, 1e-2, 1e-1]},
@@ -142,7 +159,7 @@ sweep_parameters = {
 sweep_configuration = {
     "method": "grid",
     "metric": {
-        "goal": "minimize",
+        "goal": "maximize",
         "name": f"supervised_and_opt_{'AUC-ADD-S' if train_opts['symmetric_object'] else 'AUC-ADD'}",
     },
     "parameters": sweep_parameters,

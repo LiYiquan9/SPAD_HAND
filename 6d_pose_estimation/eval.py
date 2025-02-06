@@ -108,9 +108,9 @@ def test(
     test_labels = []
     for loaded_data in test_dataset:
         if dset_type == "sim":
-            _, label = loaded_data
-        elif dset_type == "real":
             _, label, _ = loaded_data
+        elif dset_type == "real":
+            _, label, _, _ = loaded_data
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
         flat_label = np.concatenate([label_ortho6d, label_translation])
@@ -139,9 +139,9 @@ def test(
             desc=f"Running test data through model ({inference_mode})",
         ):
             if dset_type == "sim":
-                raw_input_hists, labels = loaded_data
+                raw_input_hists, labels, object_albedos = loaded_data
             elif dset_type == "real":
-                raw_input_hists, labels, filenames = loaded_data
+                raw_input_hists, labels, object_albedos, filenames = loaded_data
 
             raw_input_hists = raw_input_hists.float().to(device)
             self_norm_hists = self_norm(raw_input_hists)
