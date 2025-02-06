@@ -144,6 +144,8 @@ class PoseEstimation6DModel(nn.Module):
             self.layer2_r = nn.Linear(512, 3)  # global_rotation
 
         self.layer2_t = nn.Linear(512, 3)  # global_translation
+        
+        self.layer2_a = nn.Linear(512, 1)  # global_translation
 
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -195,5 +197,7 @@ class PoseEstimation6DModel(nn.Module):
         output_t = self.layer2_t(feature)
 
         output_r = self.layer2_r(feature)
+        
+        output_a = self.layer2_a(feature)
 
-        return torch.concat([output_r, output_t], dim=-1)
+        return torch.concat([output_r, output_t, output_a], dim=-1)

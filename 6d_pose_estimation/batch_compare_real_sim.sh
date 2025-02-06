@@ -9,6 +9,8 @@ directory=$1
 
 for folder in "$directory"/*; do
     if [ -d "$folder" ]; then
-        python 6d_pose_estimation/compare_real_sim.py -rd "$folder"
+        echo "current folder: $folder"
+        python compare_real_sim.py -rd "$folder"
+        break
     fi
 done
