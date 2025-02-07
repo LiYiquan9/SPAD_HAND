@@ -16,20 +16,25 @@ import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
 from PIL import Image
+from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
-from util import homog_inv, create_plane_mesh, convert_json_to_meshhist_pose_format, vis_hists
+from util import (convert_json_to_meshhist_pose_format, create_plane_mesh,
+                  homog_inv, vis_hists)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import time
+from random import gauss
 
 import numpy as np
 import torch
 import trimesh
+from scipy.spatial import cKDTree
 from torch.utils.data import DataLoader
 
+from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
+                                              rotation_6d_to_matrix)
 from spad_mesh.sim.model import MeshHist
-from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
-from scipy.spatial import cKDTree
-import time
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -168,14 +173,47 @@ def test(
                 ), "sensor_plane_path must be provided for supervised_and_optimize"
 
                 outputs_before_opt = model(norm_input_hists)
-                outputs = optimize(
-                    outputs_before_opt,
-                    raw_input_hists,
-                    opt_params,
-                    sensor_plane_path,
-                    obj_path,
-                    include_hist_idxs,
-                )
+
+                # run optimization on the outputs - depending on opt_params["method"], multiple
+                # optimizations may be run and the best chosen.
+                all_outputs = []
+                losses = []
+                for _ in range(opt_params["num_runs"]):
+                    if opt_params["method"] not in ["random_lr", "random_start", "fixed"]:
+                        raise Exception(f"invalid optimization method name ({opt_params['method']})")
+
+                    tweaked_opt_params = opt_params
+                    tweaked_outputs_before_opt = outputs_before_opt
+
+                    if "random_lr" in opt_params["method"]:
+                        tweaked_opt_params = {
+                            "translation_lr": opt_params["translation_lr"]
+                            * np.random.uniform(0.5, 1.5),
+                            "rotation_lr": opt_params["rotation_lr"] * np.random.uniform(0.5, 1.5),
+                            "albedo_obj_lr": opt_params["albedo_obj_lr"]
+                            * np.random.uniform(0.5, 1.5),
+                            "opt_steps": opt_params["opt_steps"],
+                            "use_lowest": opt_params["use_lowest"],
+                        }
+                    if "random_start" in opt_params["method"]:
+                        tweaked_outputs_before_opt = perturb_outputs(
+                            outputs_before_opt, rotation_range=np.deg2rad(10), translation_range=0.1
+                        )
+
+                    outputs, loss = optimize(
+                        tweaked_outputs_before_opt,
+                        raw_input_hists,
+                        tweaked_opt_params,
+                        sensor_plane_path,
+                        obj_path,
+                        include_hist_idxs,
+                    )
+
+                    all_outputs.append(outputs)
+                    losses.append(loss)
+
+                best_idx = np.argmin(losses)
+                outputs = all_outputs[best_idx]
 
             if rot_type == "6d":
                 gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -264,6 +302,47 @@ def test(
         num_samples_to_vis,
     )
 
+def perturb_outputs(outputs, rotation_range, translation_range):
+    """
+    Randomly perturb NN outputs - to be used before feeding into optimization.
+
+    Args:
+        outputs (torch.Tensor): Outputs from the neural network
+        rotation_range (float): Maximum rotation in radians to perturb the rotation by
+        translation_range (float): Maximum translation in meters to perturb the translation by
+
+    Returns:
+        torch.Tensor: Perturbed outputs
+    """
+    pred_rot_6d = outputs[:, :6]
+    pred_translation = outputs[:, 6:9]
+
+    # perturb rotation by choosing a random axis and angle in the rotation_range to apply to the 
+    # rotation matrix
+    pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d)
+    axis = make_rand_vector(3)
+    angle = np.random.uniform(-rotation_range, rotation_range)
+    perturbation_rot_matrix = R.from_rotvec(axis * angle).as_matrix()
+    perturbed_rot_matrix = pred_rot_matrix @ torch.from_numpy(perturbation_rot_matrix).float().to(device)
+    perturbed_rot_6d = matrix_to_rotation_6d(perturbed_rot_matrix)
+
+    # perturb translation by adding a random vector in the translation_range
+    perturbation_translation = torch.tensor(
+        [np.random.uniform(-translation_range, translation_range) for _ in range(3)]
+    ).to(outputs.device)
+    perturbed_translation = pred_translation + perturbation_translation
+
+    return torch.cat([perturbed_rot_6d, perturbed_translation], dim=-1)
+    
+
+def make_rand_vector(dims):
+    """
+    Create a random dims-dimensional unit vector
+    """
+    vec = [gauss(0, 1) for i in range(dims)]
+    mag = sum(x**2 for x in vec) ** .5
+    return np.array([x/mag for x in vec])
+
 
 def optimize(
     outputs_supervised: torch.Tensor,
@@ -330,7 +409,7 @@ def optimize(
     """
     albedo_obj = torch.tensor([1.0]).float().cuda()
     albedo_bg = torch.tensor([1.15]).float().cuda()
-    
+
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
@@ -394,18 +473,16 @@ def optimize(
         norm_raw_input_hists = self_norm(raw_input_hists)
         loss = torch.nn.MSELoss()(rendered_hists, norm_raw_input_hists[0, :, :])
         losses.append(loss.item())
-        params.append(
-            torch.cat([rotation.reshape(6), translation], dim=-1)[None,].detach()
-        )
+        params.append(torch.cat([rotation.reshape(6), translation], dim=-1)[None,].detach())
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
     if opt_params["use_lowest"]:
         print(f"idx of lowest loss: {np.argmin(losses)}")
-        return params[np.argmin(losses)]
+        return params[np.argmin(losses)], losses[np.argmin(losses)]
     else:
-        return params[-1]
+        return params[-1], losses[-1]
 
 
 def visualize_results(
