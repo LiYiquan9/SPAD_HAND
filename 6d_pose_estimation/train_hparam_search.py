@@ -74,6 +74,7 @@ def objective(config):
         training_path=os.path.join(train_path, "model_final.pth"),
         num_samples_to_vis=0,
         do_optimize=False,
+        opt_params=test_opts["opt_params"],
         # subsample_n_test_samples=5, # just to speed up testing the script
     )
 

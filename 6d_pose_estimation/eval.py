@@ -189,6 +189,9 @@ def test(
 
                 gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
                 pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
+
+                gt_obj_pcd = gt_obj_pcd + gt_translation.unsqueeze(1)
+                pred_obj_pcd = pred_obj_pcd + pred_translation.unsqueeze(1)
             else:
                 raise Exception("support only 6d rotation type")
 
