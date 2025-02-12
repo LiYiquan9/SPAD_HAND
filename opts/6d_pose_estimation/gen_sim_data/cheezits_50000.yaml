@@ -10,3 +10,6 @@ translation_ranges:
   x: [-0.1, 0.1]
   y: [-0.1, 0.1]
   z: [-0.1, 0.1]
+albedos:
+  object: 0.925
+  background: 1.15

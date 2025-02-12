@@ -46,6 +46,7 @@ def gen_sim_dataset(
     num_hist_bins: int,
     translation_ranges: dict,
     n_obj_poses: int,
+    albedos: dict,
     gen_previews: bool = False,
     constraint: str = None,
     t_noise_level: float = 0.0,

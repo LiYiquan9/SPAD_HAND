@@ -22,13 +22,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from util import knn_one_point
 
-import wandb
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
-
-wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -74,6 +71,7 @@ def train(
     loss_type: str = "rot_trans_pcd",
     mesh_sample_count: int = 1000,
     symmetric_object: bool = False,
+    use_wandb: bool = True,
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -94,10 +92,16 @@ def train(
         loss (str): Type of loss to use
         mesh_sample_count (int): Number of points to sample from the object mesh for ADD-S loss
         symmetric_object (bool): Whether the object is symmetric
+        use_wandb (bool): Whether to use Weights and Biases for logging - needs to be disabled
+            when running a sweep.
 
     Returns:
         None
     """
+
+    if use_wandb:
+        import wandb
+        wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
     if symmetric_object and loss_type != "ADD_S":
         raise ValueError(f"Attempting to use inappropriate loss ({loss_type}) for symmetric object")
@@ -352,7 +356,7 @@ def train(
                         labels_bg_albedo,
                         "test",
                     )
-
+                    
                     wandb.log(loss_dist)
 
                     # data = {
@@ -397,6 +401,7 @@ def train(
                             labels_obj_pc = torch.matmul(
                                 obj_points, labels_rot_matrix.transpose(1, 2)
                             )
+
                             outputs_obj_pc = torch.matmul(
                                 obj_points, outputs_rot_matrix.transpose(1, 2)
                             )
