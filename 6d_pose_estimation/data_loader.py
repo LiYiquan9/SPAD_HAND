@@ -58,6 +58,7 @@ class PoseEstimation6DDataset(Dataset):
                 self.histograms = data["histograms"]  # (n_samples, n_cameras, n_bins)
                 self.object_poses = data["object_poses"]  # (n_samples, 4, 4) (homog. matrix)
                 self.object_albedos = data["object_albedos"]  # (n_samples,)
+                self.background_albedos = data["background_albedos"]  # (n_samples,)
 
         elif self.dset_type == "real":
             self.histograms = []
@@ -88,14 +89,16 @@ class PoseEstimation6DDataset(Dataset):
 
             self.histograms = np.concatenate(self.histograms, axis=0)
             self.object_poses = np.concatenate(self.object_poses, axis=0)
-            self.object_albedos = np.ones(self.histograms.shape[0])*0.7
+            self.object_albedos = np.ones(self.histograms.shape[0])*0.9
+            self.background_albedos = np.ones(self.histograms.shape[0])*0.95
+            
 
         # exclude certain histograms if necessary
         if include_hist_idxs != "all":
             assert all(0 <= idx < self.histograms.shape[0] for idx in include_hist_idxs)
             assert len(include_hist_idxs) > 0
             assert len(include_hist_idxs) < self.histograms.shape[0]
-            assert list(set(include_hist_idxs)) == include_hist_idxs
+            # assert list(set(include_hist_idxs)) == include_hist_idxs
             self.histograms = self.histograms[:, include_hist_idxs, :]
 
         # select data according to split
@@ -141,6 +144,6 @@ class PoseEstimation6DDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
         if self.dset_type == "real":
-            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx], self.filenames[idx]
+            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx], self.background_albedos[idx], self.filenames[idx]
         else:
-            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx]
+            return self.histograms[idx], self.object_poses[idx], self.object_albedos[idx], self.background_albedos[idx]

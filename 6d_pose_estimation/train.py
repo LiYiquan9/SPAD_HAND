@@ -34,6 +34,26 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 start_time = datetime.datetime.now()
 
+def albedo_to_class(albedo_values, bin_size=0.05, min_value=0.8, max_value=1.2):
+    """
+    Convert albedo values into class bins.
+    
+    Parameters:
+    - albedo_values: np.array of shape (N,), containing albedo values.
+    - bin_size: The size of each bin.
+    - min_value: Minimum value of albedo range.
+    - max_value: Maximum value of albedo range.
+
+    Returns:
+    - bin_indices: np.array of shape (N,), containing class labels.
+    """
+    bins = np.arange(min_value, max_value + bin_size, bin_size)  # Define bin edges
+    bin_indices = np.digitize(albedo_values, bins) - 1  # Convert to class indices (0-based)
+    
+    # Ensure indices stay within valid range
+    bin_indices = np.clip(bin_indices, 0, len(bins) - 2)
+    
+    return bin_indices
 
 def train(
     dset_path: str,
@@ -139,24 +159,62 @@ def train(
     )
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
+    ce_loss = nn.CrossEntropyLoss()
 
     def get_loss(
-        outputs_rot_6d, labels_rot_6d, outputs_trans, labels_trans, outputs_obj_pc, labels_obj_pc
+        outputs_rot_6d, labels_rot_6d, outputs_trans, labels_trans, outputs_obj_pc, labels_obj_pc,
+        outputs_obj_albedo, labels_obj_albedo,
+        outputs_bg_albedo, labels_bg_albedo,
+        mode
     ):
         if loss_type == "rot_trans_pcd":
             rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
             trans_loss = l1_loss(outputs_trans, labels_trans)
             pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
-
-            loss = 0.5 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss
-
+            albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
+            bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
+            # obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
+            # bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
+            # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
+            # bg_albedo_loss = ce_loss(outputs_bg_albedo.float(), torch.tensor(bg_albedo_class, dtype=torch.long).to(device))
+            
+            # total_loss = 0.5 * rot_loss + 0.75 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
+            total_loss = 1.0 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
+            
+            loss_dict = {
+                f"{mode}_rot_loss": rot_loss,
+                f"{mode}_trans_loss":trans_loss,
+                f"{mode}_pc_loss": pc_loss,
+                # f"{mode}_albedo_loss": albedo_loss,
+                # f"{mode}_bg_albedo_loss": bg_albedo_loss,
+                f"{mode}_total_loss": total_loss,
+                
+            } 
+            
         elif loss_type == "ADD_S":
-            loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
+            add_s_loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
+            albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
+            bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
+          
+            obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
+            bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
+
+            # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
+            # bg_albedo_loss = ce_loss(outputs_bg_albedo.float(), torch.tensor(bg_albedo_class, dtype=torch.long).to(device))
+            
+            total_loss = add_s_loss + 0.000 * albedo_loss + 0.000 * bg_albedo_loss
+            
+            loss_dict = {
+                # f"{mode}_albedo_loss": albedo_loss,
+                # f"{mode}_bg_albedo_loss": bg_albedo_loss,
+                f"{mode}_ADD_S": total_loss,
+                f"{mode}_total_loss": total_loss
+            } 
 
         else:
             raise ValueError(f"Invalid loss type: {loss_type}")
 
-        return loss
+        return total_loss, loss_dict
 
     # train model
     total_batches = epochs * (len(trainloader) + len(testloader) // test_interval)
@@ -164,7 +222,7 @@ def train(
         for epoch in range(epochs):
             model.train()
 
-            for batch_idx, (hists, labels, albedos) in enumerate(trainloader):
+            for batch_idx, (hists, labels, albedos, bg_albedos) in enumerate(trainloader):
                 noise = torch.randn(hists.size()).to(device) * noise_level
 
                 hists = torch.tensor(hists).float().to(device)
@@ -173,10 +231,11 @@ def train(
                 hists = self_norm(hists).float()
 
                 labels = torch.tensor(labels).float().to(device)
-                albedos = torch.tensor(albedos).float().to(device)
+                labels_obj_albedo = torch.tensor(albedos).float().to(device)
+                labels_bg_albedo = torch.tensor(bg_albedos).float().to(device) 
                 
                 optimizer.zero_grad()
-                outputs = model(hists)
+                outputs, a_logits, b_logits = model(hists)
 
                 if rot_type == "6d":
                     labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -196,37 +255,44 @@ def train(
                     labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
                     outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
 
+                    # outputs_obj_albedo = outputs[:, 9]
+                    # outputs_bg_albedo = outputs[:, 10]
+                    
+                    outputs_obj_albedo = a_logits
+                    outputs_bg_albedo = b_logits
+                    
                 else:
                     raise Exception("support only 6d rotation type")
 
-                loss = get_loss(
+                loss, loss_dist = get_loss(
                     outputs_rot_6d,
                     labels_rot_6d,
                     outputs_trans,
                     labels_trans,
                     outputs_obj_pc,
                     labels_obj_pc,
+                    outputs_obj_albedo,
+                    labels_obj_albedo,
+                    outputs_bg_albedo,
+                    labels_bg_albedo,
+                    "train",
                 )
 
-                wandb.log(
-                    {
-                        f"train_loss_{loss_type}": loss.item(),
-                    }
-                )
+                wandb.log(loss_dist)
 
                 loss.backward()
                 optimizer.step()
 
-                data = {
-                    "prediction_rot_6d": outputs_rot_6d[0].tolist(),
-                    "target_rot_6d": labels_rot_6d[0].tolist(),
-                    "prediction_trans": outputs_trans[0].tolist(),
-                    "target_trans": labels_trans[0].tolist(),
-                    "epoch": epoch,
-                    "batch": batch_idx,
-                    "dataset": "train",
-                }
-                epoch_data.append(data)
+                # data = {
+                #     "prediction_rot_6d": outputs_rot_6d[0].tolist(),
+                #     "target_rot_6d": labels_rot_6d[0].tolist(),
+                #     "prediction_trans": outputs_trans[0].tolist(),
+                #     "target_trans": labels_trans[0].tolist(),
+                #     "epoch": epoch,
+                #     "batch": batch_idx,
+                #     "dataset": "train",
+                # }
+                # epoch_data.append(data)
 
                 # Update progress bar
                 pbar.update(1)
@@ -237,14 +303,15 @@ def train(
             if (epoch + 1) % test_interval == 0:
                 model.eval()
 
-                for batch_idx, (hists, labels, albedos) in enumerate(testloader):
+                for batch_idx, (hists, labels, albedos, bg_albedos) in enumerate(testloader):
                     hists = torch.tensor(hists).float().to(device)
                     hists = self_norm(hists).float()
                     # hists = normalize_hists(hists).float()
                     labels = torch.tensor(labels).float().to(device)
-                    albedos = torch.tensor(albedos).float().to(device)
+                    labels_obj_albedo = torch.tensor(albedos).float().to(device)
+                    labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
                     
-                    outputs = model(hists)
+                    outputs, a_logits, b_logits = model(hists)
 
                     if rot_type == "6d":
                         labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -260,25 +327,44 @@ def train(
                         outputs_obj_pc = torch.matmul(
                             obj_points, outputs_rot_matrix.transpose(1, 2)
                         )
+                        
+                        labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
+                        outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
+
+                        # outputs_obj_albedo = outputs[:, 9]
+                        # outputs_bg_albedo = outputs[:, 10]
+                        
+                        outputs_obj_albedo = a_logits
+                        outputs_bg_albedo = b_logits
                     else:
                         raise Exception("support only 6d rotation type")
 
-                    wandb.log(
-                        {
-                            f"test_loss_{loss_type}": loss.item(),
-                        }
+                    loss, loss_dist = get_loss(
+                        outputs_rot_6d,
+                        labels_rot_6d,
+                        outputs_trans,
+                        labels_trans,
+                        outputs_obj_pc,
+                        labels_obj_pc,
+                        outputs_obj_albedo,
+                        labels_obj_albedo,
+                        outputs_bg_albedo,
+                        labels_bg_albedo,
+                        "test",
                     )
 
-                    data = {
-                        "prediction_rot_6d": outputs_rot_6d[0].tolist(),
-                        "target_rot_6d": labels_rot_6d[0].tolist(),
-                        "prediction_trans": outputs_trans[0].tolist(),
-                        "target_trans": labels_trans[0].tolist(),
-                        "epoch": epoch,
-                        "batch": batch_idx,
-                        "dataset": "test",
-                    }
-                    epoch_data.append(data)
+                    wandb.log(loss_dist)
+
+                    # data = {
+                    #     "prediction_rot_6d": outputs_rot_6d[0].tolist(),
+                    #     "target_rot_6d": labels_rot_6d[0].tolist(),
+                    #     "prediction_trans": outputs_trans[0].tolist(),
+                    #     "target_trans": labels_trans[0].tolist(),
+                    #     "epoch": epoch,
+                    #     "batch": batch_idx,
+                    #     "dataset": "test",
+                    # }
+                    # epoch_data.append(data)
 
                     # Update progress bar
                     pbar.update(1)
@@ -287,70 +373,82 @@ def train(
                         test_loss=loss.item(),
                     )
 
-                    if check_real:
-                        for batch_idx, (hists, labels, albedos, filenames) in enumerate(real_testloader):
-                            hists = torch.tensor(hists).float().to(device)
-                            hists = self_norm(hists).float()
-                            # hists = normalize_hists(hists).float()
-                            labels = torch.tensor(labels).float().to(device)
-                            albedos = torch.tensor(albedos).float().to(device)
+                if check_real:
+                    for batch_idx, (hists, labels, albedos, bg_albedos, filenames) in enumerate(real_testloader):
+                        hists = torch.tensor(hists).float().to(device)
+                        hists = self_norm(hists).float()
+                        # hists = normalize_hists(hists).float()
+                        labels = torch.tensor(labels).float().to(device)
+                        labels_obj_albedo = torch.tensor(albedos).float().to(device)
+                        labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
+                        
+                        outputs, a_logits, b_logits = model(hists)
+
+                        if rot_type == "6d":
+                            labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
+                            labels_trans = labels[:, :3, 3].reshape(labels.size(0), 3)
+
+                            outputs_rot_6d = outputs[:, :6]
+                            outputs_trans = outputs[:, 6:9]
+
+                            labels_rot_matrix = labels[:, :3, :3]
+                            outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
+
+                            labels_obj_pc = torch.matmul(
+                                obj_points, labels_rot_matrix.transpose(1, 2)
+                            )
+                            outputs_obj_pc = torch.matmul(
+                                obj_points, outputs_rot_matrix.transpose(1, 2)
+                            )
                             
-                            outputs = model(hists)
+                            labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
+                            outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
+                        
+                            # outputs_obj_albedo = outputs[:, 9]
+                            # outputs_bg_albedo = outputs[:, 10]
+                            
+                            outputs_obj_albedo = a_logits
+                            outputs_bg_albedo = b_logits
+                            
+                        else:
+                            raise Exception("support only 6d rotation type")
 
-                            if rot_type == "6d":
-                                labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
-                                labels_trans = labels[:, :3, 3].reshape(labels.size(0), 3)
+                        loss, loss_dist = get_loss(
+                            outputs_rot_6d,
+                            labels_rot_6d,
+                            outputs_trans,
+                            labels_trans,
+                            outputs_obj_pc,
+                            labels_obj_pc,
+                            outputs_obj_albedo,
+                            labels_obj_albedo,
+                            outputs_bg_albedo,
+                            labels_bg_albedo,
+                            "test_real",
+                        )
 
-                                outputs_rot_6d = outputs[:, :6]
-                                outputs_trans = outputs[:, 6:9]
+                        wandb.log(loss_dist)
 
-                                labels_rot_matrix = labels[:, :3, :3]
-                                outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
+                        # for k in range(outputs_rot_6d.size()[0]):
+                        #     data = {
+                        #         "prediction_rot_6d": outputs_rot_6d[k].tolist(),
+                        #         "target_rot_6d": labels_rot_6d[k].tolist(),
+                        #         "prediction_trans": outputs_trans[k].tolist(),
+                        #         "target_trans": labels_trans[k].tolist(),
+                        #         "filename": filenames[k],
+                        #         "epoch": epoch,
+                        #         "batch": batch_idx,
+                        #         "dataset": "real_test",
+                        #     }
+                        #     epoch_data.append(data)
+                 
 
-                                labels_obj_pc = torch.matmul(
-                                    obj_points, labels_rot_matrix.transpose(1, 2)
-                                )
-                                outputs_obj_pc = torch.matmul(
-                                    obj_points, outputs_rot_matrix.transpose(1, 2)
-                                )
-                            else:
-                                raise Exception("support only 6d rotation type")
-
-                            loss = get_loss(
-                                outputs_rot_6d,
-                                labels_rot_6d,
-                                outputs_trans,
-                                labels_trans,
-                                outputs_obj_pc,
-                                labels_obj_pc,
-                            )
-
-                            wandb.log(
-                                {
-                                    f"real_test_loss_{loss_type}": loss.item(),
-                                }
-                            )
-
-                            for k in range(outputs_rot_6d.size()[0]):
-                                data = {
-                                    "prediction_rot_6d": outputs_rot_6d[k].tolist(),
-                                    "target_rot_6d": labels_rot_6d[k].tolist(),
-                                    "prediction_trans": outputs_trans[k].tolist(),
-                                    "target_trans": labels_trans[k].tolist(),
-                                    "filename": filenames[k],
-                                    "epoch": epoch,
-                                    "batch": batch_idx,
-                                    "dataset": "real_test",
-                                }
-                                epoch_data.append(data)
-                            epoch_data.append(data)
-
-                            # Update progress bar
-                            pbar.update(1)
-                            pbar.set_postfix(
-                                epoch=epoch + 1,
-                                test_loss=loss.item(),
-                            )
+                        # Update progress bar
+                        pbar.update(1)
+                        pbar.set_postfix(
+                            epoch=epoch + 1,
+                            test_loss=loss.item(),
+                        )
 
             if (epoch + 1) % save_model_interval == 0:
                 model_save_path = f"{output_dir}/model_{epoch}.pth"

@@ -113,24 +113,31 @@ class TransformerBlock(nn.Module):
 
 
 class PoseEstimation6DModel(nn.Module):
-    def __init__(self, device, num_cameras=16, dropout_rate=0.0, rot_type="6d"):
+    def __init__(self, device, num_cameras=16, dropout_rate=0.0, rot_type="6d",
+                 num_classes_a = 8,
+                 num_classes_b = 8):
+        
         super().__init__()
 
         self.device = device
         self.num_cameras = num_cameras
         self.rot_type = rot_type
+        self.num_classes_a = num_classes_a
+        self.num_classes_b = num_classes_b
+        
+        self.conv1d = nn.Conv1d(1, 4, 4, stride=1, padding=0)
 
-        # self.conv1d = nn.Conv1d(1, 4, 4, stride=1, padding=0)
+        self.layer0_0 = nn.Linear(128, 500)
+        
+        self.layer0 = nn.Linear(500, 512)
 
-        self.layer0 = nn.Linear(128, 256)
-
-        self.layer0_1 = nn.Linear(256, 64)
+        self.layer0_1 = nn.Linear(512, 64)
 
         self.pe = PositionalEncoder(self.device, self.num_cameras)
 
         self.transformers = nn.ModuleList(
             [
-                TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=1)
+                TransformerBlock(embed_size=64, heads=4, dropout=0.1, forward_expansion=2)
                 for _ in range(4)
             ]
         )
@@ -139,13 +146,39 @@ class PoseEstimation6DModel(nn.Module):
         self.layer1_1 = nn.Linear(512, 512)
 
         if self.rot_type == "6d":
-            self.layer2_r = nn.Linear(512, 6)  # global_rotation
+            self.layer2_r = nn.Sequential(
+                                nn.Linear(512, 128),
+                                nn.ReLU(), 
+                                nn.Linear(128, 6),
+                            )  # global_rotation
         else:
-            self.layer2_r = nn.Linear(512, 3)  # global_rotation
+            self.layer2_r = nn.Sequential(
+                                nn.Linear(512, 128),
+                                nn.ReLU(), 
+                                nn.Linear(128, 3),
+                            )   # global_rotation
 
-        self.layer2_t = nn.Linear(512, 3)  # global_translation
+        self.layer2_t = nn.Sequential(
+                                nn.Linear(512, 128),
+                                nn.ReLU(), 
+                                nn.Linear(128, 3),
+                            )   # global_translation
         
-        self.layer2_a = nn.Linear(512, 1)  # global_translation
+        self.layer2_a = nn.Sequential(
+                                nn.Linear(512, 128),
+                                nn.ReLU(), 
+                                nn.Linear(128, 1),
+                            )  # object albedo
+        
+        self.layer2_b = nn.Sequential(
+                                nn.Linear(512, 128),
+                                nn.ReLU(), 
+                                nn.Linear(128, 1),
+                            )   # background albedo
+        
+        # self.layer2_a = nn.Linear(512, self.num_classes_a)  # object albedo
+        
+        # self.layer2_b = nn.Linear(512, self.num_classes_b)  # background albedo
 
         self.dropout = nn.Dropout(dropout_rate)
 
@@ -167,6 +200,14 @@ class PoseEstimation6DModel(nn.Module):
             batchsize * num_cameras, -1
         )  # hist_feature [batchsize * num_cameras, 128]
 
+        mlp_feature = self.layer0_0(hist_feature)
+        
+        hist_feature = self.conv1d(hist_feature.unsqueeze(1)) # shape[batchsize*num_cameras, 4, 125]
+        
+        hist_feature = hist_feature.view(batchsize * num_cameras, -1)  # shape[batchsize*num_cameras, 500]
+        
+        hist_feature = F.relu(hist_feature+mlp_feature)
+        
         hist_feature = self.layer0(hist_feature)
 
         hist_feature = F.relu(hist_feature)
@@ -198,6 +239,8 @@ class PoseEstimation6DModel(nn.Module):
 
         output_r = self.layer2_r(feature)
         
-        output_a = self.layer2_a(feature)
+        output_a = self.layer2_a(feature)  
+        
+        output_b = self.layer2_b(feature)  
 
-        return torch.concat([output_r, output_t, output_a], dim=-1)
+        return torch.concat([output_r, output_t], dim=-1), output_a, output_b

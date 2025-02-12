@@ -22,22 +22,16 @@ TEMP_SENSOR_POSES_PATH = "data/TEMP_sensor_poses.npz"
 
 def vis_sim_data(real_data_path: str, show: bool = False):
     # load scene mesh from obj file and save in the .npz format expected by MeshHist
-    # scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
+    scene_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane_with_object.obj"))
     
     plane_mesh = trimesh.load(os.path.join(real_data_path, "gt", "plane.obj"))
     
     # plane_mesh = plane_mesh.subdivide()
     plane_mesh = plane_mesh.subdivide_loop(10)
 
-    scene_mesh = plane_mesh
-    
-    # plane_mesh = plane_mesh.subdivide()
-    
-    # new_plane_points = trimesh.sample.sample_surface_even(plane_mesh, 50000)[0]
-    # tri = Delaunay(new_plane_points[:, :2])
-    # plane_mesh = trimesh.Trimesh(vertices=new_plane_points, faces=tri.simplices) 
+    # scene_mesh = plane_mesh
 
-    # object_mesh = trimesh.load(os.path.join(real_data_path, "gt", "object.obj"))
+    object_mesh = trimesh.load(os.path.join(real_data_path, "gt", "object.obj"))
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(real_data_path, "tmf.json")) as f:
@@ -54,26 +48,33 @@ def vis_sim_data(real_data_path: str, show: bool = False):
             "translations": cam_translations,
             "camera_ids": np.arange(len(poses_homog)),
         },
-        mesh_info={
-            "vertices": scene_mesh.vertices,
-            "faces": scene_mesh.faces,
-            "face_normals": scene_mesh.face_normals,
-            "vert_normals": scene_mesh.vertex_normals,
-        },
         # mesh_info={
-        #     "vertices": object_mesh.vertices,
-        #     "faces": object_mesh.faces,
-        #     "face_normals": object_mesh.face_normals,
-        #     "vert_normals": object_mesh.vertex_normals,
+        #     "vertices": scene_mesh.vertices,
+        #     "faces": scene_mesh.faces,
+        #     "face_normals": scene_mesh.face_normals,
+        #     "vert_normals": scene_mesh.vertex_normals,
         # },
-        # background_mesh={
+        # mesh_info={
         #     "vertices": plane_mesh.vertices,
         #     "faces": plane_mesh.faces,
         #     "face_normals": plane_mesh.face_normals,
         #     "vert_normals": plane_mesh.vertex_normals,
         # },
+        mesh_info={
+            "vertices": object_mesh.vertices,
+            "faces": object_mesh.faces,
+            "face_normals": object_mesh.face_normals,
+            "vert_normals": object_mesh.vertex_normals,
+        },
+        background_mesh={
+            "vertices": plane_mesh.vertices,
+            "faces": plane_mesh.faces,
+            "face_normals": plane_mesh.face_normals,
+            "vert_normals": plane_mesh.vertex_normals,
+        },
         with_bin_scaling=False,
-        albedo_obj=1.15,
+        albedo_obj=0.9,
+        albedo_bg=1.15,
     )
 
     rendered_hists = (

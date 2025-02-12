@@ -108,9 +108,9 @@ def test(
     test_labels = []
     for loaded_data in test_dataset:
         if dset_type == "sim":
-            _, label = loaded_data
+            _, label, albedos = loaded_data
         elif dset_type == "real":
-            _, label, _ = loaded_data
+            _, label, albedos,albedos_bg, _ = loaded_data
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
         flat_label = np.concatenate([label_ortho6d, label_translation])
@@ -139,9 +139,9 @@ def test(
             desc=f"Running test data through model ({inference_mode})",
         ):
             if dset_type == "sim":
-                raw_input_hists, labels = loaded_data
+                raw_input_hists, labels, albedos = loaded_data
             elif dset_type == "real":
-                raw_input_hists, labels, filenames = loaded_data
+                raw_input_hists, labels, albedos, albedos_bg, filenames = loaded_data
 
             raw_input_hists = raw_input_hists.float().to(device)
             self_norm_hists = self_norm(raw_input_hists)
@@ -149,7 +149,7 @@ def test(
             labels = labels.float().to(device)
 
             if inference_mode == "supervised_model":
-                outputs = model(norm_input_hists)
+                outputs, a_logists, b_logists = model(norm_input_hists)
             elif inference_mode == "test_set_avg":
                 outputs = test_labels_avg.repeat(norm_input_hists.shape[0], 1).to(device).float()
             elif inference_mode == "supervised_and_optimize":
@@ -159,7 +159,7 @@ def test(
                     sensor_plane_path != ""
                 ), "sensor_plane_path must be provided for supervised_and_optimize"
 
-                outputs_before_opt = model(norm_input_hists)
+                outputs_before_opt, a_logists, b_logists = model(norm_input_hists)
                 outputs = optimize(
                     outputs_before_opt,
                     raw_input_hists,
@@ -180,6 +180,10 @@ def test(
 
                 gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
                 pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
+                
+                gt_obj_pcd = gt_obj_pcd + gt_translation.unsqueeze(1)
+                pred_obj_pcd = pred_obj_pcd + pred_translation.unsqueeze(1)
+                
             else:
                 raise Exception("support only 6d rotation type")
 
@@ -315,16 +319,16 @@ def optimize(
     [0.00263098 0.01105693 0.99993541]
     [0.00263102 0.01105689 0.99993541]]
     """
-    albedo_obj = torch.tensor([1.0]).float().cuda()
-    albedo_bg = torch.tensor([1.15]).float().cuda()
     
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
-
+    # albedo_obj = outputs_supervised[0, 9].detach().requires_grad_()
+    albedo_obj = 0.9
+    
     translation.requires_grad = True
     rotation.requires_grad = True
-    albedo_obj.requires_grad = True
+    # albedo_obj.requires_grad = True
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(sensor_plane_path, "tmf.json")) as f:
@@ -358,15 +362,15 @@ def optimize(
 
     optimizer = torch.optim.Adam(
         [
-            {"params": translation, "lr": 1e-3},
-            {"params": rotation, "lr": 1e-2},
-            {"params": albedo_obj, "lr": 1e-2},
+            {"params": translation, "lr": 1e-3}, # 1e-3
+            {"params": rotation, "lr": 1e-2}, # 1e-2
+            # {"params": albedo_obj, "lr": 5e-9}, # 5e-2
         ]
     )
     losses = []
-    opt_steps = 100
+    opt_steps = 50
     for i in range(opt_steps):
-        rendered_hists = layer(rotation, translation, None, albedo_obj, albedo_bg)
+        rendered_hists = layer(rotation, translation, None, albedo_obj)
         if include_hist_idxs != "all":
             rendered_hists = rendered_hists[include_hist_idxs, :]
 
@@ -378,6 +382,8 @@ def optimize(
         rendered_hists = self_norm(rendered_hists)
         norm_raw_input_hists = self_norm(raw_input_hists)
         loss = torch.nn.MSELoss()(rendered_hists, norm_raw_input_hists[0, :, :])
+        # if loss.item() > 0.5:
+        #     break
         losses.append(loss.item())
         optimizer.zero_grad()
         loss.backward()
@@ -499,7 +505,7 @@ def visualize_results(
                 dset_type,
                 dset_path,
                 result["filename"],
-                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.png"),
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.stl"),
             )
 
 
@@ -544,7 +550,8 @@ def render_mesh_from_viewpoints(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    # return
+    print("output_path ",output_path)
+    return
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise
@@ -614,7 +621,8 @@ def create_plane_mesh(
     d: float,
     x_bounds: Tuple[float, float] = (-5, 5),
     y_bounds: Tuple[float, float] = (-5, 5),
-) -> o3d.cpu.pybind.geometry.TriangleMesh:
+# ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+):
     """
     Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
 

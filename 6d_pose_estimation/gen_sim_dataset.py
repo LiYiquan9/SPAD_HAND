@@ -49,6 +49,8 @@ def gen_sim_dataset(
     gen_previews: bool = False,
     constraint: str = None,
     t_noise_level: float = 0.0,
+    object_albedo_range: list = [1.0, 1.0],
+    background_albedo_range: list = [1.0, 1.0],
 ) -> None:
     """
     Generate a simulated dataset for 6D pose recognition of a known mesh.
@@ -99,8 +101,8 @@ def gen_sim_dataset(
 
     # (n_object_poses, n_cameras, n_bins)
     all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), num_hist_bins))
-    # object_albedos = np.random.uniform(0.1, 1.5, size=object_poses.shape[0])
-    object_albedos = np.ones(object_poses.shape[0]) * 1.15
+    object_albedos = np.random.uniform(object_albedo_range[0], object_albedo_range[1], size=object_poses.shape[0])
+    background_albedos = np.random.uniform(background_albedo_range[0], background_albedo_range[1], size=object_poses.shape[0])
     
     for object_pose_idx, object_pose in tqdm(
         enumerate(object_poses), total=len(object_poses), desc="Generating simulated data"
@@ -140,7 +142,7 @@ def gen_sim_dataset(
             with_bin_scaling=False,
             num_bins=num_hist_bins,
             albedo_obj=object_albedos[object_pose_idx],
-            albedo_bg=1.15,
+            albedo_bg=background_albedos[object_pose_idx],
         )
 
         # render histograms
@@ -183,6 +185,7 @@ def gen_sim_dataset(
         histograms=all_rendered_hists,
         object_poses=object_poses,
         object_albedos=object_albedos,
+        background_albedos=background_albedos,
     )
 
     # save metadata about the simulation
@@ -356,4 +359,6 @@ if __name__ == "__main__":
         gen_previews=opts["gen_previews"],
         constraint=opts["constraint"],
         t_noise_level=opts["t_noise_level"],
+        object_albedo_range=opts["object_albedo_range"],
+        background_albedo_range=opts["background_albedo_range"],
     )
