@@ -1,0 +1,21 @@
+---
+batch_size: 2048
+check_real: true
+dset_path: data/sim_data/6d_pose/colored2_50000_flips/simulated_data.npz
+dset_type: sim
+epochs: 1000
+include_hist_idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+loss_type: "rot_trans_pcd"
+mesh_sample_count: 500
+noise_level: 0
+obj_path: data/obj_meshes/two.stl
+real_path: data/real_data/6d_pose/colored_twos/matte_white_refined_gt
+rot_type: 6d
+save_model_interval: 50
+symmetric_object: false
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0001
+scheduler:
+  step_size: 5000
+  gamma: 0.8
