@@ -255,8 +255,8 @@ def generate_random_poses(
             "object_above_surface", or "three_points_of_contact".
         plane_params: The plane model to use for object pose constraints. Not required if constraint
             is "none".
-        obj_mesh: The object mesh to use for object pose constraints. Not required if constraint is
-            "none".
+        obj_mesh: The object mesh to use for object pose constraints and to find the center for 
+            180 flips
         include_180_flips: If True, for each sampled pose also include all three 180 degree
             rotations of the same pose. This might help when training on near-symmetric objects to
             force the network to distinguish between near-symmetries to reduce the loss.
@@ -282,7 +282,7 @@ def generate_random_poses(
         raise ValueError("Number of poses must be a multiple of 4 when include_180_flips is True.")
 
     # sample poses
-    raw_poses = []
+    poses = []
     pose_idx = 0
     pose_sampling_progress = tqdm(total=n_poses, desc="Sampling object poses")
     while pose_idx < n_poses:
@@ -302,27 +302,11 @@ def generate_random_poses(
             ]
         )
 
-        if include_180_flips:
-            raw_poses.append(tf_homog)
-            raw_poses.append(tf_homog @ X_AXIS_180)
-            raw_poses.append(tf_homog @ Y_AXIS_180)
-            raw_poses.append(tf_homog @ Z_AXIS_180)
-            pose_idx += 4
-            pose_sampling_progress.update(4)
-
-        else:
-            raw_poses.append(tf_homog)
-            pose_idx += 1
-            pose_sampling_progress.update(1)
-
-    # refine poses to match constraints and/or include 180 degree flips
-    processed_poses = []
-    for pose in tqdm(raw_poses, desc="Processing object poses"):
         if constraint != "none":
             # transform the object mesh by the object pose and find the lowest point on the
             # transformed mesh
             transformed_obj_mesh = obj_mesh.copy()
-            transformed_obj_mesh.apply_transform(pose)
+            transformed_obj_mesh.apply_transform(tf_homog)
             lowest_vertex_idx = transformed_obj_mesh.vertices[:, 2].argmin()
             lowest_obj_vertex = transformed_obj_mesh.vertices[lowest_vertex_idx]
 
@@ -336,20 +320,62 @@ def generate_random_poses(
 
             if constraint == "object_on_surface":
                 # modify the z translation so that the lowest object vertex is on the plane
-                pose[2, 3] += plane_z - lowest_obj_vertex[2]
+                tf_homog[2, 3] += plane_z - lowest_obj_vertex[2]
             elif constraint == "object_above_surface":
                 # if any point on the object is below the plane, reject the sample and try again
                 if plane_z > lowest_obj_vertex[2]:
                     # move the object so that the lowest vertex is as far above the surface as it
                     # is below
-                    pose[2, 3] += 2 * (plane_z - lowest_obj_vertex[2])
+                    tf_homog[2, 3] += 2 * (plane_z - lowest_obj_vertex[2])
             elif constraint == "three_points_of_contact":
                 raise NotImplementedError("Three points of contact constraint not yet implemented.")
 
-        processed_poses.append(pose)
-        pose_idx += 1
+        if include_180_flips:
+            poses.append(tf_homog)
+            poses.append(center_and_rotate(tf_homog, obj_mesh, X_AXIS_180))
+            poses.append(center_and_rotate(tf_homog, obj_mesh, Y_AXIS_180))
+            poses.append(center_and_rotate(tf_homog, obj_mesh, Z_AXIS_180))
+            pose_idx += 4
+            pose_sampling_progress.update(4)
+        else:
+            poses.append(tf_homog)
+            pose_idx += 1
+            pose_sampling_progress.update(1)
 
-    return np.array(processed_poses)
+    return np.array(poses)
+
+
+def center_and_rotate(tf_homog: np.ndarray, obj_mesh: trimesh.Trimesh, rot_mat_homog: np.ndarray):
+    """
+    Apply a rotation to the pose given by tf_homog, about the center of the object mesh. So the
+    returned pose will be the same as tf_homog, but with the object rotated about its center.
+
+    Args:
+        tf_homog: The pose to rotate.
+        obj_mesh: The object mesh.
+        rot_mat_homog: The rotation matrix to apply.
+    """
+
+    # find the center of the object in its default pose by finding the center of its bounding box
+    obj_center = obj_mesh.bounds.mean(axis=0)
+
+    # find the object center with the original tf_homog applied
+    old_obj_center = tf_homog @ np.array([*obj_center, 1])
+
+    # apply the 180 degree translation to tf_homog
+    new_tf_homog = tf_homog @ rot_mat_homog
+
+    # find the center of the object with the new tf_homog
+    new_obj_center = new_tf_homog @ np.array([*obj_center, 1])
+
+    # apply an offset to the translation in new_tf_homog to keep the object centerpoint the same
+    new_tf_homog[:, 3] += old_obj_center - new_obj_center
+
+    # verify that the object center is the same
+    corrected_new_obj_center = new_tf_homog @ np.array([*obj_center, 1])
+    assert np.allclose(corrected_new_obj_center, old_obj_center)
+
+    return new_tf_homog
 
 
 if __name__ == "__main__":
