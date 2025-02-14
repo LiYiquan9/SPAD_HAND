@@ -19,5 +19,5 @@ opt_params:
   albedo_obj_lr: 0.01
   opt_steps: 100
   use_lowest: false
-  method: fixed # can be fixed, random_start, random_lr, or random_start_random_lr
-  num_runs: 1 # the number of optimizations to run - one with lowest loss is selected
+  method: flips # can be fixed, flips, random_start, random_lr, or random_start_random_lr
+  num_runs: 4 # the number of optimizations to run - one with lowest loss is selected

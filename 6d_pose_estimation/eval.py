@@ -18,8 +18,16 @@ from model import PoseEstimation6DModel
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
-from util import (convert_json_to_meshhist_pose_format, create_plane_mesh,
-                  homog_inv, vis_hists)
+from util import (
+    convert_json_to_meshhist_pose_format,
+    create_plane_mesh,
+    homog_inv,
+    vis_hists,
+    X_AXIS_180,
+    Y_AXIS_180,
+    Z_AXIS_180,
+)
+from gen_sim_dataset import center_and_rotate
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -32,8 +40,7 @@ import trimesh
 from scipy.spatial import cKDTree
 from torch.utils.data import DataLoader
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 from spad_mesh.sim.model import MeshHist
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,6 +100,11 @@ def test(
         None
     """
 
+    if "flips" in opt_params["method"] and opt_params["num_runs"] < 4:
+        raise ValueError(
+            "flips method, but num_runs is less than 4, so not all flips will be tried"
+        )
+
     if dset_type == "sim":
         full_dset_path = os.path.join(dset_path, "simulated_data.npz")
     else:
@@ -118,9 +130,9 @@ def test(
     test_labels = []
     for loaded_data in test_dataset:
         if dset_type == "sim":
-            _, label, albedos,albedos_bg = loaded_data
+            _, label, albedos, albedos_bg = loaded_data
         elif dset_type == "real":
-            _, label, albedos,albedos_bg, _ = loaded_data
+            _, label, albedos, albedos_bg, _ = loaded_data
 
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
@@ -179,13 +191,41 @@ def test(
                 # optimizations may be run and the best chosen.
                 all_outputs = []
                 losses = []
+                flip_cycle = [np.eye(4), X_AXIS_180, Y_AXIS_180, Z_AXIS_180]
+                flip_cycle_idx = 0
                 for _ in range(opt_params["num_runs"]):
-                    if opt_params["method"] not in ["random_lr", "random_start", "fixed"]:
-                        raise Exception(f"invalid optimization method name ({opt_params['method']})")
+                    if opt_params["method"] not in ["random_lr", "random_start", "fixed", "flips"]:
+                        raise Exception(
+                            f"invalid optimization method name ({opt_params['method']})"
+                        )
 
                     tweaked_opt_params = opt_params
                     tweaked_outputs_before_opt = outputs_before_opt
 
+                    if "flips" in opt_params["method"]:
+                        pred_rot_6d = outputs[:, :6] # (batch, 6)
+                        pred_translation = outputs[:, 6:9] # (batch, 3)
+                        pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d) # (batch, 3, 3)
+                        # fmt: off
+                        pred_homog_tf = torch.tensor(
+                            [
+                                [pred_rot_matrix[0, 0, 0], pred_rot_matrix[0, 0, 1], pred_rot_matrix[0, 0, 2], pred_translation[0, 0]],
+                                [pred_rot_matrix[0, 1, 0], pred_rot_matrix[0, 1, 1], pred_rot_matrix[0, 1, 2], pred_translation[0, 1]],
+                                [pred_rot_matrix[0, 2, 0], pred_rot_matrix[0, 2, 1], pred_rot_matrix[0, 2, 2], pred_translation[0, 2]],
+                                [0, 0, 0, 1]
+                            ]
+                        ) # (4, 4)
+                        # fmt: on
+                        tweaked_pred_homog_tf = center_and_rotate(
+                            pred_homog_tf.detach().cpu().numpy(),
+                            obj_mesh,
+                            flip_cycle[flip_cycle_idx],
+                        ) # (4, 4)
+                        flipped_rot_6d = matrix_to_rotation_6d(
+                            torch.from_numpy(tweaked_pred_homog_tf[:3, :3][None, :, :])
+                        ) # (1, 6)
+                        flipped_translation = torch.from_numpy(tweaked_pred_homog_tf[:3, 3][None, :]) # (1, 3)
+                        torch.cat([flipped_rot_6d, flipped_translation], dim=-1) # (1, 9)
                     if "random_lr" in opt_params["method"]:
                         tweaked_opt_params = {
                             "translation_lr": opt_params["translation_lr"]
@@ -228,10 +268,9 @@ def test(
 
                 gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
                 pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
-                
+
                 gt_obj_pcd = gt_obj_pcd + gt_translation.unsqueeze(1)
                 pred_obj_pcd = pred_obj_pcd + pred_translation.unsqueeze(1)
-                
 
             else:
                 raise Exception("support only 6d rotation type")
@@ -305,6 +344,7 @@ def test(
         num_samples_to_vis,
     )
 
+
 def perturb_outputs(outputs, rotation_range, translation_range):
     """
     Randomly perturb NN outputs - to be used before feeding into optimization.
@@ -320,13 +360,15 @@ def perturb_outputs(outputs, rotation_range, translation_range):
     pred_rot_6d = outputs[:, :6]
     pred_translation = outputs[:, 6:9]
 
-    # perturb rotation by choosing a random axis and angle in the rotation_range to apply to the 
+    # perturb rotation by choosing a random axis and angle in the rotation_range to apply to the
     # rotation matrix
     pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d)
     axis = make_rand_vector(3)
     angle = np.random.uniform(-rotation_range, rotation_range)
     perturbation_rot_matrix = R.from_rotvec(axis * angle).as_matrix()
-    perturbed_rot_matrix = pred_rot_matrix @ torch.from_numpy(perturbation_rot_matrix).float().to(device)
+    perturbed_rot_matrix = pred_rot_matrix @ torch.from_numpy(perturbation_rot_matrix).float().to(
+        device
+    )
     perturbed_rot_6d = matrix_to_rotation_6d(perturbed_rot_matrix)
 
     # perturb translation by adding a random vector in the translation_range
@@ -336,15 +378,15 @@ def perturb_outputs(outputs, rotation_range, translation_range):
     perturbed_translation = pred_translation + perturbation_translation
 
     return torch.cat([perturbed_rot_6d, perturbed_translation], dim=-1)
-    
+
 
 def make_rand_vector(dims):
     """
     Create a random dims-dimensional unit vector
     """
     vec = [gauss(0, 1) for i in range(dims)]
-    mag = sum(x**2 for x in vec) ** .5
-    return np.array([x/mag for x in vec])
+    mag = sum(x**2 for x in vec) ** 0.5
+    return np.array([x / mag for x in vec])
 
 
 def optimize(
@@ -360,56 +402,7 @@ def optimize(
     plane_mesh = trimesh.load(f"{sensor_plane_path}/gt/plane.obj")
     object_mesh = trimesh.load(obj_path)
 
-    # plane_mesh.vertices = [ # setting this fixes it??
-    #     [-5.,        -5.,        -0.0973211,],
-    #     [-5.,         5.,        -0.207898 ,],
-    #     [ 5.,         5.,        -0.234209 ,],
-    #     [ 5.,        -5.,        -0.123633 ,],
-    # ]
-
     plane_mesh.vertices[0][2] += 1e-7  # this fixes it????
-
-    # print("plane_mesh vertices", plane_mesh.vertices)
-    # print("plane mesh faces", plane_mesh.faces)
-    # print("plane mesh normals", plane_mesh.face_normals)
-    # print("plane mesh vertex normals", plane_mesh.vertex_normals)
-
-    """
-    mattewhite2 (broken)
-    plane_mesh vertices
-    [[-5.       -5.       -0.131366]
-    [-5.        5.       -0.210161]
-    [ 5.        5.       -0.199364]
-    [ 5.       -5.       -0.120569]]
-    plane mesh faces
-    [[0 2 1]
-    [0 3 2]]
-    plane mesh normals
-    [[-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]]
-    plane mesh vertex normals
-    [[-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]]
-
-    real (works)
-    [[-5.        -5.        -0.0973211]
-    [-5.         5.        -0.207898 ]
-    [ 5.         5.        -0.234209 ]
-    [ 5.        -5.        -0.123633 ]]
-    plane mesh faces
-    [[0 2 1]
-    [0 3 2]]
-    plane mesh normals
-    [[0.00263093 0.01105698 0.99993541]
-    [0.00263102 0.01105689 0.99993541]]
-    plane mesh vertex normals
-    [[0.00263098 0.01105693 0.99993541]
-    [0.00263093 0.01105698 0.99993541]
-    [0.00263098 0.01105693 0.99993541]
-    [0.00263102 0.01105689 0.99993541]]
-    """
 
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
@@ -417,7 +410,7 @@ def optimize(
     # albedo_obj = outputs_supervised[0, 9].detach().requires_grad_()
     albedo_obj = 0.9
     albedo_bg = 1.15
-    
+
     translation.requires_grad = True
     rotation.requires_grad = True
     # albedo_obj.requires_grad = True
@@ -457,7 +450,6 @@ def optimize(
             # {"params": translation, "lr": 1e-3}, # 1e-3
             # {"params": rotation, "lr": 1e-2}, # 1e-2
             # {"params": albedo_obj, "lr": 5e-9}, # 5e-2
-
             {"params": translation, "lr": opt_params["translation_lr"]},
             {"params": rotation, "lr": opt_params["rotation_lr"]},
             # {"params": albedo_obj, "lr": opt_params["albedo_obj_lr"]},
@@ -654,7 +646,7 @@ def render_mesh_from_viewpoints(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    print("output_path ",output_path)
+    print("output_path ", output_path)
     return
 
     vis = o3d.visualization.Visualizer()
@@ -725,7 +717,7 @@ def create_plane_mesh(
     d: float,
     x_bounds: Tuple[float, float] = (-5, 5),
     y_bounds: Tuple[float, float] = (-5, 5),
-# ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+    # ) -> o3d.cpu.pybind.geometry.TriangleMesh:
 ):
     """
     Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
