@@ -22,11 +22,6 @@ instance_idx = 0
 # objective function that we'd like to minimize
 def objective(config):
     global instance_idx
-
-    train_path = os.path.join(
-        "6d_pose_estimation/results/opt_hparam_search/train", START_TIME, f"{instance_idx:03d}"
-    )
-    os.makedirs(train_path, exist_ok=True)
     test_path = os.path.join(
         "6d_pose_estimation/results/opt_hparam_search/eval", START_TIME, f"{instance_idx:03d}"
     )
@@ -43,7 +38,7 @@ def objective(config):
         sensor_plane_path=test_opts["sensor_plane_path"],
         # things that are fixed
         output_dir=test_path,
-        training_path=os.path.join(train_path, "model_final.pth"),
+        training_path=test_opts["training_path"],
         num_samples_to_vis=0,
         do_optimize=True,
         # hyperparameters to search over
@@ -52,7 +47,9 @@ def objective(config):
             "rotation_lr": config["rotation_lr"],
             "albedo_obj_lr": config["albedo_obj_lr"],
             "opt_steps": config["opt_steps"],
-            "use_lowest": config["use_lowest"]
+            "use_lowest": config["use_lowest"],
+            "method": config["method"],
+            "num_runs": config["num_runs"],
         }
         # subsample_n_test_samples=5, # just to speed up testing the script
     )
@@ -103,11 +100,13 @@ sweep_parameters = {
     "rotation_lr": {"values": [1e-4, 1e-3, 1e-2, 1e-1]},
     "albedo_obj_lr": {"values": [1e-4, 1e-3, 1e-2, 1e-1]},
     "opt_steps": {"values": [50, 100, 200]},
-    "use_lowest": {"values": [True, False]}
+    "use_lowest": {"values": [True, False]},
+    "method": {"values": ['fixed', 'random_start', 'random_lr', 'random_start_random_lr', 'flips']},
+    "num_runs": {"values": [1, 4, 8]}
 }
 
 sweep_configuration = {
-    "method": "grid",
+    "method": "random",
     "metric": {
         "goal": "maximize",
         "name": "AUC-ADD-S" if test_opts["symmetric_object"] else "AUC-ADD",
@@ -118,4 +117,4 @@ sweep_configuration = {
 # 3: Start the sweep
 sweep_id = wandb.sweep(sweep=sweep_configuration, project="spad_6d_pose_estimation")
 
-wandb.agent(sweep_id, function=main, count=100)
+wandb.agent(sweep_id, function=main, count=1000)

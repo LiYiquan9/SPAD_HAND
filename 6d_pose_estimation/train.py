@@ -282,7 +282,8 @@ def train(
                     "train",
                 )
 
-                wandb.log(loss_dist)
+                if use_wandb:
+                    wandb.log(loss_dist)
 
                 loss.backward()
                 optimizer.step()

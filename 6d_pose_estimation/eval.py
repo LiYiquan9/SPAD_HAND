@@ -194,7 +194,7 @@ def test(
                 flip_cycle = [np.eye(4), X_AXIS_180, Y_AXIS_180, Z_AXIS_180]
                 flip_cycle_idx = 0
                 for _ in range(opt_params["num_runs"]):
-                    if opt_params["method"] not in ["random_lr", "random_start", "fixed", "flips"]:
+                    if opt_params["method"] not in ["random_lr", "random_start", "fixed", "flips", "random_start_random_lr"]:
                         raise Exception(
                             f"invalid optimization method name ({opt_params['method']})"
                         )
@@ -601,7 +601,7 @@ def visualize_results(
                 dset_type,
                 dset_path,
                 result["filename"],
-                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.stl"),
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.jpg"),
             )
 
 
@@ -646,8 +646,8 @@ def render_mesh_from_viewpoints(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    print("output_path ", output_path)
-    return
+    # print("output_path ", output_path)
+    # return
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise
