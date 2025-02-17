@@ -57,6 +57,7 @@ def gen_sim_dataset(
     object_albedo_range: list = [1.0, 1.0],
     background_albedo_range: list = [1.0, 1.0],
     include_180_flips: bool = False,
+    impulse_scale: float = 1.0,
 ) -> None:
     """
     Generate a simulated dataset for 6D pose recognition of a known mesh.
@@ -148,6 +149,32 @@ def gen_sim_dataset(
             num_bins=num_hist_bins,
             albedo_obj=object_albedos[object_pose_idx],
             albedo_bg=background_albedos[object_pose_idx],
+            jitter_kernel_scale=impulse_scale,
+        )
+
+        forward_model_default = MeshHist(
+            camera_config={
+                "rotations": cam_rotations,
+                "translations": cam_translations + t_noise,
+                "camera_ids": np.arange(len(poses_homog)),
+            },
+            mesh_info={
+                "vertices": transformed_object_mesh.vertices,
+                "faces": transformed_object_mesh.faces,
+                "face_normals": transformed_object_mesh.face_normals,
+                "vert_normals": transformed_object_mesh.vertex_normals,
+            },
+            background_mesh={
+                "vertices": plane_mesh.vertices,
+                "faces": plane_mesh.faces,
+                "face_normals": plane_mesh.face_normals,
+                "vert_normals": plane_mesh.vertex_normals,
+            },
+            with_bin_scaling=False,
+            num_bins=num_hist_bins,
+            albedo_obj=object_albedos[object_pose_idx],
+            albedo_bg=background_albedos[object_pose_idx],
+            jitter_kernel_scale=1.0,
         )
 
         # render histograms
@@ -160,8 +187,17 @@ def gen_sim_dataset(
 
         # modify hists to make it close to real hists
         rendered_hist = forward_model(None, None, image_output_path).detach().cpu().numpy()
-        # rendered_hist = np.roll(rendered_hist, shift=1, axis=1)
         rendered_hist = sim_data_adjustment(rendered_hist)
+
+        rendered_hist_default = forward_model_default(None, None, None).detach().cpu().numpy()
+        rendered_hist_default = sim_data_adjustment(rendered_hist_default)
+
+        fig, ax = plt.subplots(1, 2)
+        ax[0].plot(rendered_hist[0, :])
+        ax[0].set_title("selected impulse scale")
+        ax[1].plot(rendered_hist_default[0, :])
+        ax[1].set_title("default impulse scale (1.0)")
+        plt.show()
 
         all_rendered_hists[object_pose_idx, :, :] = rendered_hist
 
@@ -413,4 +449,5 @@ if __name__ == "__main__":
         object_albedo_range=opts["object_albedo_range"],
         background_albedo_range=opts["background_albedo_range"],
         include_180_flips=opts["include_180_flips"],
+        impulse_scale=opts["impulse_scale"],
     )

@@ -13,3 +13,4 @@ translation_ranges:
 object_albedo_range: [1.0, 1.0]
 background_albedo_range: [1.0, 1.0]
 include_180_flips: True
+impulse_scale: 1.0

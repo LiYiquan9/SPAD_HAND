@@ -12,4 +12,5 @@ translation_ranges:
   z: [-0.1, 0.1]
 object_albedo_range: [0.925, 0.925]
 background_albedo_range: [1.15, 1.15]
-include_180_flips: True
+include_180_flips: False
+impulse_scale: 1.0
