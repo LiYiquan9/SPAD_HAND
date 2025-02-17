@@ -16,25 +16,27 @@ import trimesh
 import yaml
 from data_loader import PoseEstimation6DDataset
 from model import PoseEstimation6DModel
+from symmetric_loss import symmetric_loss
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from util import knn_one_point
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
+from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
+                                              rotation_6d_to_matrix)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 start_time = datetime.datetime.now()
 
+
 def albedo_to_class(albedo_values, bin_size=0.05, min_value=0.8, max_value=1.2):
     """
     Convert albedo values into class bins.
-    
+
     Parameters:
     - albedo_values: np.array of shape (N,), containing albedo values.
     - bin_size: The size of each bin.
@@ -46,11 +48,12 @@ def albedo_to_class(albedo_values, bin_size=0.05, min_value=0.8, max_value=1.2):
     """
     bins = np.arange(min_value, max_value + bin_size, bin_size)  # Define bin edges
     bin_indices = np.digitize(albedo_values, bins) - 1  # Convert to class indices (0-based)
-    
+
     # Ensure indices stay within valid range
     bin_indices = np.clip(bin_indices, 0, len(bins) - 2)
-    
+
     return bin_indices
+
 
 def train(
     dset_path: str,
@@ -72,6 +75,7 @@ def train(
     mesh_sample_count: int = 1000,
     symmetric_object: bool = False,
     use_wandb: bool = True,
+    mesh_name: str = "",
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -94,6 +98,8 @@ def train(
         symmetric_object (bool): Whether the object is symmetric
         use_wandb (bool): Whether to use Weights and Biases for logging - needs to be disabled
             when running a sweep.
+        mesh_name (str): Name of the mesh (e.g. cheezits, mustard, two). Used to determine the
+            manually defined symmetries to use when loss type is symmetric.
 
     Returns:
         None
@@ -101,9 +107,12 @@ def train(
 
     if use_wandb:
         import wandb
-        wandb.init(project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data")
 
-    if symmetric_object and loss_type != "ADD_S":
+        wandb.init(
+            project="spad_6d_pose_estimation", name="spad_6d_pose_estimator_training", dir="data"
+        )
+
+    if symmetric_object and loss_type not in  ["ADD_S", "symmetric"]:
         raise ValueError(f"Attempting to use inappropriate loss ({loss_type}) for symmetric object")
     elif not symmetric_object and loss_type == "ADD_S":
         raise ValueError(f"Attempting to use ADD-S loss with non-symmetric object")
@@ -166,10 +175,18 @@ def train(
     ce_loss = nn.CrossEntropyLoss()
 
     def get_loss(
-        outputs_rot_6d, labels_rot_6d, outputs_trans, labels_trans, outputs_obj_pc, labels_obj_pc,
-        outputs_obj_albedo, labels_obj_albedo,
-        outputs_bg_albedo, labels_bg_albedo,
-        mode
+        outputs_rot_6d,
+        labels_rot_6d,
+        outputs_trans,
+        labels_trans,
+        outputs_obj_pc,
+        labels_obj_pc,
+        outputs_obj_albedo,
+        labels_obj_albedo,
+        outputs_bg_albedo,
+        labels_bg_albedo,
+        mode,
+        mesh_name="",
     ):
         if loss_type == "rot_trans_pcd":
             rot_loss = l1_loss(outputs_rot_6d, labels_rot_6d)
@@ -181,39 +198,54 @@ def train(
             # bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
             # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
             # bg_albedo_loss = ce_loss(outputs_bg_albedo.float(), torch.tensor(bg_albedo_class, dtype=torch.long).to(device))
-            
+
             # total_loss = 0.5 * rot_loss + 0.75 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
-            total_loss = 1.0 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
-            
+            total_loss = (
+                1.0 * rot_loss
+                + 0.5 * trans_loss
+                + 0.1 * pc_loss
+                + 0.00 * albedo_loss
+                + 0.00 * bg_albedo_loss
+            )
+
             loss_dict = {
                 f"{mode}_rot_loss": rot_loss,
-                f"{mode}_trans_loss":trans_loss,
+                f"{mode}_trans_loss": trans_loss,
                 f"{mode}_pc_loss": pc_loss,
                 # f"{mode}_albedo_loss": albedo_loss,
                 # f"{mode}_bg_albedo_loss": bg_albedo_loss,
                 f"{mode}_total_loss": total_loss,
-                
-            } 
-            
+            }
+
         elif loss_type == "ADD_S":
             add_s_loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
             albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
             bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
-          
+
             obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
             bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
 
             # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
             # bg_albedo_loss = ce_loss(outputs_bg_albedo.float(), torch.tensor(bg_albedo_class, dtype=torch.long).to(device))
-            
+
             total_loss = add_s_loss + 0.000 * albedo_loss + 0.000 * bg_albedo_loss
-            
+
             loss_dict = {
                 # f"{mode}_albedo_loss": albedo_loss,
                 # f"{mode}_bg_albedo_loss": bg_albedo_loss,
                 f"{mode}_ADD_S": total_loss,
-                f"{mode}_total_loss": total_loss
-            } 
+                f"{mode}_total_loss": total_loss,
+            }
+
+        elif loss_type == "symmetric":
+            assert mesh_name != "", "Mesh name must be provided for symmetric loss"
+            total_loss = symmetric_loss(
+                outputs_rot_6d, labels_rot_6d, outputs_trans, labels_trans, mesh_name
+            )
+
+            loss_dict = {
+                f"{mode}_total_loss": total_loss,
+            }
 
         else:
             raise ValueError(f"Invalid loss type: {loss_type}")
@@ -236,8 +268,8 @@ def train(
 
                 labels = torch.tensor(labels).float().to(device)
                 labels_obj_albedo = torch.tensor(albedos).float().to(device)
-                labels_bg_albedo = torch.tensor(bg_albedos).float().to(device) 
-                
+                labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
+
                 optimizer.zero_grad()
                 outputs, a_logits, b_logits = model(hists)
 
@@ -261,14 +293,14 @@ def train(
 
                     # outputs_obj_albedo = outputs[:, 9]
                     # outputs_bg_albedo = outputs[:, 10]
-                    
+
                     outputs_obj_albedo = a_logits
                     outputs_bg_albedo = b_logits
-                    
+
                 else:
                     raise Exception("support only 6d rotation type")
 
-                loss, loss_dist = get_loss(
+                loss, loss_dict = get_loss(
                     outputs_rot_6d,
                     labels_rot_6d,
                     outputs_trans,
@@ -280,10 +312,11 @@ def train(
                     outputs_bg_albedo,
                     labels_bg_albedo,
                     "train",
+                    mesh_name,
                 )
 
                 if use_wandb:
-                    wandb.log(loss_dist)
+                    wandb.log(loss_dict)
 
                 loss.backward()
                 optimizer.step()
@@ -315,7 +348,7 @@ def train(
                     labels = torch.tensor(labels).float().to(device)
                     labels_obj_albedo = torch.tensor(albedos).float().to(device)
                     labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
-                    
+
                     outputs, a_logits, b_logits = model(hists)
 
                     if rot_type == "6d":
@@ -332,19 +365,19 @@ def train(
                         outputs_obj_pc = torch.matmul(
                             obj_points, outputs_rot_matrix.transpose(1, 2)
                         )
-                        
+
                         labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
                         outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
 
                         # outputs_obj_albedo = outputs[:, 9]
                         # outputs_bg_albedo = outputs[:, 10]
-                        
+
                         outputs_obj_albedo = a_logits
                         outputs_bg_albedo = b_logits
                     else:
                         raise Exception("support only 6d rotation type")
 
-                    loss, loss_dist = get_loss(
+                    loss, loss_dict = get_loss(
                         outputs_rot_6d,
                         labels_rot_6d,
                         outputs_trans,
@@ -356,9 +389,10 @@ def train(
                         outputs_bg_albedo,
                         labels_bg_albedo,
                         "test",
+                        mesh_name,
                     )
-                    
-                    wandb.log(loss_dist)
+
+                    wandb.log(loss_dict)
 
                     # data = {
                     #     "prediction_rot_6d": outputs_rot_6d[0].tolist(),
@@ -379,14 +413,16 @@ def train(
                     )
 
                 if check_real:
-                    for batch_idx, (hists, labels, albedos, bg_albedos, filenames) in enumerate(real_testloader):
+                    for batch_idx, (hists, labels, albedos, bg_albedos, filenames) in enumerate(
+                        real_testloader
+                    ):
                         hists = torch.tensor(hists).float().to(device)
                         hists = self_norm(hists).float()
                         # hists = normalize_hists(hists).float()
                         labels = torch.tensor(labels).float().to(device)
                         labels_obj_albedo = torch.tensor(albedos).float().to(device)
                         labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
-                        
+
                         outputs, a_logits, b_logits = model(hists)
 
                         if rot_type == "6d":
@@ -406,20 +442,20 @@ def train(
                             outputs_obj_pc = torch.matmul(
                                 obj_points, outputs_rot_matrix.transpose(1, 2)
                             )
-                            
+
                             labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
                             outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
-                        
+
                             # outputs_obj_albedo = outputs[:, 9]
                             # outputs_bg_albedo = outputs[:, 10]
-                            
+
                             outputs_obj_albedo = a_logits
                             outputs_bg_albedo = b_logits
-                            
+
                         else:
                             raise Exception("support only 6d rotation type")
 
-                        loss, loss_dist = get_loss(
+                        loss, loss_dict = get_loss(
                             outputs_rot_6d,
                             labels_rot_6d,
                             outputs_trans,
@@ -431,9 +467,10 @@ def train(
                             outputs_bg_albedo,
                             labels_bg_albedo,
                             "test_real",
+                            mesh_name,
                         )
 
-                        wandb.log(loss_dist)
+                        wandb.log(loss_dict)
 
                         # for k in range(outputs_rot_6d.size()[0]):
                         #     data = {
@@ -447,7 +484,6 @@ def train(
                         #         "dataset": "real_test",
                         #     }
                         #     epoch_data.append(data)
-                 
 
                         # Update progress bar
                         pbar.update(1)
@@ -530,4 +566,5 @@ if __name__ == "__main__":
         symmetric_object=opts["symmetric_object"],
         optimizer_params=opts["optimizer"],
         scheduler_params=opts["scheduler"],
+        mesh_name=opts["mesh_name"],
     )

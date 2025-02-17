@@ -165,7 +165,7 @@ def test(
             desc=f"Running test data through model ({inference_mode})",
         ):
             if dset_type == "sim":
-                raw_input_hists, labels, albedos = loaded_data
+                raw_input_hists, labels, albedos, albedos_bg = loaded_data
             elif dset_type == "real":
                 raw_input_hists, labels, albedos, albedos_bg, filenames = loaded_data
 

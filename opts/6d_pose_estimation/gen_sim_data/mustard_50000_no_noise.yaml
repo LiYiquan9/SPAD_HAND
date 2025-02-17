@@ -1,0 +1,15 @@
+---
+constraint: object_on_surface
+gen_previews: false
+mesh_path: data/obj_meshes/006_mustard_bottle/google_16k/nontextured.stl
+n_obj_poses: 50000
+num_hist_bins: 128
+real_dataset_path: data/real_data/6d_pose/YCB/mustard_refined_gt
+t_noise_level: 0.0
+translation_ranges:
+  x: [-0.1, 0.1]
+  y: [-0.1, 0.1]
+  z: [-0.1, 0.1]
+object_albedo_range: [0.925, 0.925]
+background_albedo_range: [1.15, 1.15]
+include_180_flips: True
