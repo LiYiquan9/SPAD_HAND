@@ -192,12 +192,12 @@ def gen_sim_dataset(
         rendered_hist_default = forward_model_default(None, None, None).detach().cpu().numpy()
         rendered_hist_default = sim_data_adjustment(rendered_hist_default)
 
-        fig, ax = plt.subplots(1, 2)
-        ax[0].plot(rendered_hist[0, :])
-        ax[0].set_title("selected impulse scale")
-        ax[1].plot(rendered_hist_default[0, :])
-        ax[1].set_title("default impulse scale (1.0)")
-        plt.show()
+        # fig, ax = plt.subplots(1, 2)
+        # ax[0].plot(rendered_hist[0, :])
+        # ax[0].set_title("selected impulse scale")
+        # ax[1].plot(rendered_hist_default[0, :])
+        # ax[1].set_title("default impulse scale (1.0)")
+        # plt.show()
 
         all_rendered_hists[object_pose_idx, :, :] = rendered_hist
 
