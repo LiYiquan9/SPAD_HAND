@@ -1,0 +1,22 @@
+---
+batch_size: 2048
+check_real: true
+dset_path: data/sim_data/6d_pose/mustard_50000_no_noise/simulated_data.npz
+dset_type: sim
+epochs: 500
+include_hist_idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+loss_type: "symmetric"
+mesh_name: "mustard"
+mesh_sample_count: 500
+noise_level: 0
+obj_path: data/obj_meshes/006_mustard_bottle/google_16k/nontextured.stl
+real_path: data/real_data/6d_pose/YCB/mustard_refined_gt
+rot_type: 6d
+save_model_interval: 50
+symmetric_object: true
+optimizer:
+  lr: 0.0001
+  weight_decay: 0.0001
+scheduler:
+  step_size: 10000
+  gamma: 0.9

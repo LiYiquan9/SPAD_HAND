@@ -1,0 +1,22 @@
+---
+batch_size: 1
+dset_path: data/sim_data/6d_pose/mustard_50000_no_noise/
+dset_type: sim
+include_hist_idxs: [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+num_samples_to_vis: 50
+obj_path: data/obj_meshes/006_mustard_bottle/google_16k/nontextured.stl
+rot_type: 6d
+save_opt: true
+sensor_plane_path: data/real_data/6d_pose/YCB/mustard_refined_gt/001
+symmetric_object: true
+subsample_n_test_samples: 50 # 0 means do all test samples
+test_on_split: test
+training_path: 6d_pose_estimation/results/train/pt_sim_mustard_50000_no_noise_15cam/model_299.pth
+opt_params:
+  translation_lr: 0.001
+  rotation_lr: 0.01
+  albedo_obj_lr: 0.01
+  opt_steps: 100
+  use_lowest: true
+  method: fixed # can be fixed, random_start, random_lr, or random_start_random_lr
+  num_runs: 1 # the number of optimizations to run - one with lowest loss is selected
