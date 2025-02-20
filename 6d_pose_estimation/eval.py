@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from typing import List, Tuple
+import pandas as pd
 
 import matplotlib.pyplot as plt
 import open3d as o3d
@@ -194,7 +195,13 @@ def test(
                 flip_cycle = [np.eye(4), X_AXIS_180, Y_AXIS_180, Z_AXIS_180]
                 flip_cycle_idx = 0
                 for _ in range(opt_params["num_runs"]):
-                    if opt_params["method"] not in ["random_lr", "random_start", "fixed", "flips", "random_start_random_lr"]:
+                    if opt_params["method"] not in [
+                        "random_lr",
+                        "random_start",
+                        "fixed",
+                        "flips",
+                        "random_start_random_lr",
+                    ]:
                         raise Exception(
                             f"invalid optimization method name ({opt_params['method']})"
                         )
@@ -203,9 +210,9 @@ def test(
                     tweaked_outputs_before_opt = outputs_before_opt
 
                     if "flips" in opt_params["method"]:
-                        pred_rot_6d = outputs[:, :6] # (batch, 6)
-                        pred_translation = outputs[:, 6:9] # (batch, 3)
-                        pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d) # (batch, 3, 3)
+                        pred_rot_6d = outputs[:, :6]  # (batch, 6)
+                        pred_translation = outputs[:, 6:9]  # (batch, 3)
+                        pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d)  # (batch, 3, 3)
                         # fmt: off
                         pred_homog_tf = torch.tensor(
                             [
@@ -220,12 +227,14 @@ def test(
                             pred_homog_tf.detach().cpu().numpy(),
                             obj_mesh,
                             flip_cycle[flip_cycle_idx],
-                        ) # (4, 4)
+                        )  # (4, 4)
                         flipped_rot_6d = matrix_to_rotation_6d(
                             torch.from_numpy(tweaked_pred_homog_tf[:3, :3][None, :, :])
-                        ) # (1, 6)
-                        flipped_translation = torch.from_numpy(tweaked_pred_homog_tf[:3, 3][None, :]) # (1, 3)
-                        torch.cat([flipped_rot_6d, flipped_translation], dim=-1) # (1, 9)
+                        )  # (1, 6)
+                        flipped_translation = torch.from_numpy(
+                            tweaked_pred_homog_tf[:3, 3][None, :]
+                        )  # (1, 3)
+                        torch.cat([flipped_rot_6d, flipped_translation], dim=-1)  # (1, 9)
                     if "random_lr" in opt_params["method"]:
                         tweaked_opt_params = {
                             "translation_lr": opt_params["translation_lr"]
@@ -343,6 +352,7 @@ def test(
         dset_type,
         num_samples_to_vis,
     )
+    get_percentiles(all_results, output_dir, pred_metrics.keys())
 
 
 def perturb_outputs(outputs, rotation_range, translation_range):
@@ -902,6 +912,52 @@ def get_pred_metrics(
         "translation_error": translation_error,
         "rotation_error": rotation_error,
     }
+
+
+def get_percentiles(all_results: dict, output_path: str, metrics: list):
+    """
+    Print a json file that contains the results sorted by ADD-S and median, etc. results
+    """
+
+    # save sorted_results.json, which contains all the results sorted by metric for each inference
+    # mode
+    sorted_results = {inference_mode: {} for inference_mode in all_results.keys()}
+    for inference_mode in all_results.keys():
+        im_results = {metric: {} for metric in metrics}
+        for metric in metrics:
+            # df contains columns like the ADD, ADD-S, filename
+            df = pd.DataFrame(all_results[inference_mode])
+            df = df.sort_values(by=metric, ascending=True)
+            for row in df.iterrows():
+                im_results[metric][row[1]["filename"]] = row[1][metric]
+        sorted_results[inference_mode] = im_results
+
+    with open(os.path.join(output_path, "sorted_results.json"), "w") as f:
+        json.dump(sorted_results, f, indent=4)
+
+    # save percentiles.json, which contains the name and score for the 100th, 90th, 50th, 10th, 0th
+    # percentile for each metric and inference mode
+    percentiles = {inference_mode: {} for inference_mode in all_results.keys()}
+    for inference_mode in all_results.keys():
+        im_results = {metric: {} for metric in metrics}
+        for metric in metrics:
+            df = pd.DataFrame(all_results[inference_mode])
+            df = df.sort_values(by=metric, ascending=True)
+            im_results[metric]["100"] = {df.iloc[-1]["filename"]: df.iloc[-1][metric]}
+            im_results[metric]["90"] = {
+                df.iloc[int(0.9 * len(df))]["filename"]: df.iloc[int(0.9 * len(df))][metric]
+            }
+            im_results[metric]["50"] = {
+                df.iloc[int(0.5 * len(df))]["filename"]: df.iloc[int(0.5 * len(df))][metric]
+            }
+            im_results[metric]["10"] = {
+                df.iloc[int(0.1 * len(df))]["filename"]: df.iloc[int(0.1 * len(df))][metric]
+            }
+            im_results[metric]["0"] = {df.iloc[0]["filename"]: df.iloc[0][metric]}
+        percentiles[inference_mode] = im_results
+
+    with open(os.path.join(output_path, "percentiles.json"), "w") as f:
+        json.dump(percentiles, f, indent=4)
 
 
 if __name__ == "__main__":
