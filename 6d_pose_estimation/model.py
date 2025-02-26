@@ -127,11 +127,15 @@ class PoseEstimation6DModel(nn.Module):
         
         self.conv1d = nn.Conv1d(1, 4, 4, stride=1, padding=0)
 
-        self.layer0_0 = nn.Linear(128, 500)
+        self.layer0_0 = nn.Linear(128, 512)
         
-        self.layer0 = nn.Linear(500, 512)
+        self.layer0_1 = nn.Linear(512, 512)
+        
+        self.layer0_2 = nn.Linear(512, 512)
 
-        self.layer0_1 = nn.Linear(512, 64)
+        self.layer0_3 = nn.Linear(512, 512)
+        
+        self.layer0_4 = nn.Linear(512, 64)
 
         self.pe = PositionalEncoder(self.device, self.num_cameras)
 
@@ -200,21 +204,21 @@ class PoseEstimation6DModel(nn.Module):
             batchsize * num_cameras, -1
         )  # hist_feature [batchsize * num_cameras, 128]
 
-        mlp_feature = self.layer0_0(hist_feature)
+        hist_feature = F.relu(self.layer0_0(hist_feature))
         
-        hist_feature = self.conv1d(hist_feature.unsqueeze(1)) # shape[batchsize*num_cameras, 4, 125]
+        hist_feature = F.relu(self.layer0_1(hist_feature))
         
-        hist_feature = hist_feature.view(batchsize * num_cameras, -1)  # shape[batchsize*num_cameras, 500]
+        # hist_feature = self.conv1d(hist_feature.unsqueeze(1)) # shape[batchsize*num_cameras, 4, 125]
         
-        hist_feature = F.relu(hist_feature+mlp_feature)
+        # hist_feature = hist_feature.view(batchsize * num_cameras, -1)  # shape[batchsize*num_cameras, 500]
         
-        hist_feature = self.layer0(hist_feature)
+        # hist_feature = F.relu(hist_feature+mlp_feature)
+   
+        # hist_feature =  F.relu(self.layer0_2(hist_feature))
 
-        hist_feature = F.relu(hist_feature)
+        # hist_feature = F.relu(self.layer0_3(hist_feature))
 
-        hist_feature = self.layer0_1(hist_feature)
-
-        hist_feature = F.relu(hist_feature)
+        hist_feature = F.relu(self.layer0_4(hist_feature))
 
         feature = hist_feature + self.pe(hist_feature)  # shape[batchsize*num_cameras, 64]
 

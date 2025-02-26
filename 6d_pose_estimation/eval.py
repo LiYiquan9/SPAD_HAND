@@ -53,7 +53,7 @@ def test(
     output_dir: str,
     batch_size: int,
     training_path: str,
-    opt_params: dict,
+    # opt_params: dict,
     noise_level: float = 0.00,
     rot_type: str = "6d",
     obj_path: str = "",
@@ -110,6 +110,7 @@ def test(
         split=test_on_split,
         subsample_n_test_samples=subsample_n_test_samples,
         include_hist_idxs=include_hist_idxs,
+        return_real_filename=True
     )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
@@ -153,7 +154,7 @@ def test(
             desc=f"Running test data through model ({inference_mode})",
         ):
             if dset_type == "sim":
-                raw_input_hists, labels, albedos = loaded_data
+                raw_input_hists, labels, albedos, albedos_bg = loaded_data
             elif dset_type == "real":
                 raw_input_hists, labels, albedos, albedos_bg, filenames = loaded_data
 
@@ -177,44 +178,52 @@ def test(
 
                 # run optimization on the outputs - depending on opt_params["method"], multiple
                 # optimizations may be run and the best chosen.
-                all_outputs = []
-                losses = []
-                for _ in range(opt_params["num_runs"]):
-                    if opt_params["method"] not in ["random_lr", "random_start", "fixed"]:
-                        raise Exception(f"invalid optimization method name ({opt_params['method']})")
+                # all_outputs = []
+                # losses = []
+                # for _ in range(opt_params["num_runs"]):
+                #     if opt_params["method"] not in ["random_lr", "random_start", "fixed"]:
+                #         raise Exception(f"invalid optimization method name ({opt_params['method']})")
 
-                    tweaked_opt_params = opt_params
-                    tweaked_outputs_before_opt = outputs_before_opt
+                #     tweaked_opt_params = opt_params
+                #     tweaked_outputs_before_opt = outputs_before_opt
 
-                    if "random_lr" in opt_params["method"]:
-                        tweaked_opt_params = {
-                            "translation_lr": opt_params["translation_lr"]
-                            * np.random.uniform(0.5, 1.5),
-                            "rotation_lr": opt_params["rotation_lr"] * np.random.uniform(0.5, 1.5),
-                            "albedo_obj_lr": opt_params["albedo_obj_lr"]
-                            * np.random.uniform(0.5, 1.5),
-                            "opt_steps": opt_params["opt_steps"],
-                            "use_lowest": opt_params["use_lowest"],
-                        }
-                    if "random_start" in opt_params["method"]:
-                        tweaked_outputs_before_opt = perturb_outputs(
-                            outputs_before_opt, rotation_range=np.deg2rad(10), translation_range=0.1
-                        )
+                #     if "random_lr" in opt_params["method"]:
+                #         tweaked_opt_params = {
+                #             "translation_lr": opt_params["translation_lr"]
+                #             * np.random.uniform(0.5, 1.5),
+                #             "rotation_lr": opt_params["rotation_lr"] * np.random.uniform(0.5, 1.5),
+                #             "albedo_obj_lr": opt_params["albedo_obj_lr"]
+                #             * np.random.uniform(0.5, 1.5),
+                #             "opt_steps": opt_params["opt_steps"],
+                #             "use_lowest": opt_params["use_lowest"],
+                #         }
+                #     if "random_start" in opt_params["method"]:
+                #         tweaked_outputs_before_opt = perturb_outputs(
+                #             outputs_before_opt, rotation_range=np.deg2rad(10), translation_range=0.1
+                #         )
 
-                    outputs, loss = optimize(
-                        tweaked_outputs_before_opt,
-                        raw_input_hists,
-                        tweaked_opt_params,
-                        sensor_plane_path,
-                        obj_path,
-                        include_hist_idxs,
-                    )
+                # outputs, loss = optimize(
+                #     tweaked_outputs_before_opt,
+                #     raw_input_hists,
+                #     tweaked_opt_params,
+                #     sensor_plane_path,
+                #     obj_path,
+                #     include_hist_idxs,
+                # )
 
-                    all_outputs.append(outputs)
-                    losses.append(loss)
+                # all_outputs.append(outputs)
+                # losses.append(loss)
 
-                best_idx = np.argmin(losses)
-                outputs = all_outputs[best_idx]
+                # best_idx = np.argmin(losses)
+                # outputs = all_outputs[best_idx]
+   
+                outputs = optimize(
+                    outputs_before_opt,
+                    raw_input_hists,
+                    sensor_plane_path,
+                    obj_path,
+                    include_hist_idxs,
+                )
 
             if rot_type == "6d":
                 gt_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
@@ -350,7 +359,6 @@ def make_rand_vector(dims):
 def optimize(
     outputs_supervised: torch.Tensor,
     raw_input_hists: torch.Tensor,
-    opt_params: dict,
     sensor_plane_path: str = None,
     obj_path: str = None,
     include_hist_idxs: list | str = "all",
@@ -415,12 +423,13 @@ def optimize(
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
     translation = outputs_supervised[0, 6:9].detach().requires_grad_()
     # albedo_obj = outputs_supervised[0, 9].detach().requires_grad_()
-    albedo_obj = 0.9
-    albedo_bg = 1.15
+    albedo_obj = torch.tensor(1.00).cuda()
+    albedo_bg = torch.tensor(1.00).cuda()
     
     translation.requires_grad = True
     rotation.requires_grad = True
-    # albedo_obj.requires_grad = True
+    albedo_obj.requires_grad = True
+    albedo_bg.requires_grad = True
 
     # load sensor positions from json file and save in the .npz format expected by MeshHist
     with open(os.path.join(sensor_plane_path, "tmf.json")) as f:
@@ -454,12 +463,13 @@ def optimize(
 
     optimizer = torch.optim.Adam(
         [
-            # {"params": translation, "lr": 1e-3}, # 1e-3
-            # {"params": rotation, "lr": 1e-2}, # 1e-2
-            # {"params": albedo_obj, "lr": 5e-9}, # 5e-2
+            {"params": translation, "lr": 1e-3}, # 1e-3
+            {"params": rotation, "lr": 1e-2}, # 1e-2
+            {"params": albedo_obj, "lr": 1e-3}, # 5e-2
+            {"params": albedo_bg, "lr": 1e-3}, # 5e-2
 
-            {"params": translation, "lr": opt_params["translation_lr"]},
-            {"params": rotation, "lr": opt_params["rotation_lr"]},
+            # {"params": translation, "lr": opt_params["translation_lr"]},
+            # {"params": rotation, "lr": opt_params["rotation_lr"]},
             # {"params": albedo_obj, "lr": opt_params["albedo_obj_lr"]},
         ]
     )
@@ -468,7 +478,7 @@ def optimize(
     losses = []
 
     params = []
-    for i in range(opt_params["opt_steps"]):
+    for i in range(50):
         rendered_hists = layer(rotation, translation, None, albedo_obj, albedo_bg)
 
         if include_hist_idxs != "all":
@@ -490,11 +500,12 @@ def optimize(
         loss.backward()
         optimizer.step()
 
-    if opt_params["use_lowest"]:
-        print(f"idx of lowest loss: {np.argmin(losses)}")
-        return params[np.argmin(losses)], losses[np.argmin(losses)]
-    else:
-        return params[-1], losses[-1]
+    # if opt_params["use_lowest"]:
+    #     print(f"idx of lowest loss: {np.argmin(losses)}")
+    #     return params[np.argmin(losses)], losses[np.argmin(losses)]
+    # else:
+    #     return params[-1], losses[-1]
+    return torch.cat([rotation.reshape(6), translation], dim=-1)[None,]
 
 
 def visualize_results(
@@ -936,6 +947,7 @@ if __name__ == "__main__":
     with open(f"{output_dir}/opts.yaml", "w") as f:
         yaml.dump(opts, f)
 
+    print(opts["sensor_plane_path"])
     test(
         opts["dset_path"],
         opts["dset_type"],
@@ -950,5 +962,5 @@ if __name__ == "__main__":
         subsample_n_test_samples=opts["subsample_n_test_samples"],
         include_hist_idxs=opts["include_hist_idxs"],
         symmetric_object=opts["symmetric_object"],
-        opt_params=opts["opt_params"],
+        # opt_params=opts["opt_params"],
     )

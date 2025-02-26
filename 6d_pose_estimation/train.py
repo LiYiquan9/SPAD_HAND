@@ -72,6 +72,8 @@ def train(
     mesh_sample_count: int = 1000,
     symmetric_object: bool = False,
     use_wandb: bool = True,
+    training_mode: str = "train",
+    checkpoint_path: str = None
 ) -> None:
     """
     Train a 6D pose estimation model (works on real or simulated data)
@@ -94,6 +96,8 @@ def train(
         symmetric_object (bool): Whether the object is symmetric
         use_wandb (bool): Whether to use Weights and Biases for logging - needs to be disabled
             when running a sweep.
+        train_mode (str): Whether train from sratch or finetune.
+        checkpoint_path (str): Model checkpoint path.
 
     Returns:
         None
@@ -121,15 +125,21 @@ def train(
     obj_points = torch.tensor(obj_points, dtype=torch.float32).to(device)
 
     # load dataset
+    if training_mode == "train":
+        testing_portion = 0.2
+        
+        test_dataset = PoseEstimation6DDataset(
+            dset_path, dset_type=dset_type, test_portion=testing_portion, split="test", include_hist_idxs=include_hist_idxs
+        )
+        testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    else:
+        testing_portion = 0.0
+    
     train_dataset = PoseEstimation6DDataset(
-        dset_path, dset_type=dset_type, split="train", include_hist_idxs=include_hist_idxs
+        dset_path, dset_type=dset_type, test_portion=testing_portion, split="train", include_hist_idxs=include_hist_idxs,
     )
-    test_dataset = PoseEstimation6DDataset(
-        dset_path, dset_type=dset_type, split="test", include_hist_idxs=include_hist_idxs
-    )
-
     trainloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    testloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
+    
 
     if check_real:
         real_test_dataset = PoseEstimation6DDataset(
@@ -141,8 +151,8 @@ def train(
         )
         real_testloader = DataLoader(real_test_dataset, batch_size=batch_size, shuffle=True)
 
-    print(f"Training dataset has {len(train_dataset)} samples")
-    print(f"Testing dataset has {len(test_dataset)} samples")
+    # print(f"Training dataset has {len(train_dataset)} samples")
+    # print(f"Testing dataset has {len(test_dataset)} samples")
 
     def self_norm(hists):
         per_hist_mean = hists.mean(dim=-1, keepdim=True)
@@ -155,6 +165,11 @@ def train(
     model = PoseEstimation6DModel(device=device, num_cameras=train_dataset.histograms.shape[1]).to(
         device
     )
+    
+    if training_mode == "finetune":
+        assert checkpoint_path is not None, "Checkpoint path must be provided for finetuning."
+        model.load_state_dict(torch.load(checkpoint_path, weights_only=False))
+        
     optimizer = optim.Adam(
         model.parameters(), lr=optimizer_params["lr"], weight_decay=optimizer_params["weight_decay"]
     )
@@ -177,6 +192,8 @@ def train(
             pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
             albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
             bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
+            
+            # add_s_loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
             # obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
             # bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
             # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
@@ -184,11 +201,12 @@ def train(
             
             # total_loss = 0.5 * rot_loss + 0.75 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
             total_loss = 1.0 * rot_loss + 0.5 * trans_loss + 0.1 * pc_loss + 0.00 * albedo_loss + 0.00 * bg_albedo_loss
-            
+
             loss_dict = {
                 f"{mode}_rot_loss": rot_loss,
                 f"{mode}_trans_loss":trans_loss,
                 f"{mode}_pc_loss": pc_loss,
+                # f"{mode}_ADD_S": add_s_loss,
                 # f"{mode}_albedo_loss": albedo_loss,
                 # f"{mode}_bg_albedo_loss": bg_albedo_loss,
                 f"{mode}_total_loss": total_loss,
@@ -197,21 +215,27 @@ def train(
             
         elif loss_type == "ADD_S":
             add_s_loss = torch.mean(calculate_ADD_S(outputs_obj_pc, labels_obj_pc))
-            albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
-            bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
-          
-            obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
-            bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
+            
+            # pc_loss = l2_loss(outputs_obj_pc, labels_obj_pc)
+            
+            # trans_loss = l1_loss(outputs_trans, labels_trans)
+            # albedo_loss = l1_loss(outputs_obj_albedo, labels_obj_albedo)
+            # bg_albedo_loss = l1_loss(outputs_bg_albedo, labels_bg_albedo)
+    
+            # obj_albedo_class = albedo_to_class(labels_obj_albedo.cpu().numpy())
+            # bg_albedo_class = albedo_to_class(labels_bg_albedo.cpu().numpy())
 
             # albedo_loss = ce_loss(outputs_obj_albedo.float(), torch.tensor(obj_albedo_class, dtype=torch.long).to(device))
             # bg_albedo_loss = ce_loss(outputs_bg_albedo.float(), torch.tensor(bg_albedo_class, dtype=torch.long).to(device))
             
-            total_loss = add_s_loss + 0.000 * albedo_loss + 0.000 * bg_albedo_loss
+            total_loss = add_s_loss 
             
             loss_dict = {
                 # f"{mode}_albedo_loss": albedo_loss,
                 # f"{mode}_bg_albedo_loss": bg_albedo_loss,
-                f"{mode}_ADD_S": total_loss,
+                # f"{mode}_rot_loss": rot_loss,
+                # f"{mode}_trans_loss":trans_loss,
+                f"{mode}_ADD_S": add_s_loss,
                 f"{mode}_total_loss": total_loss
             } 
 
@@ -221,7 +245,10 @@ def train(
         return total_loss, loss_dict
 
     # train model
-    total_batches = epochs * (len(trainloader) + len(testloader) // test_interval)
+    if training_mode == "train":
+        total_batches = epochs * (len(trainloader) + len(testloader) // test_interval)
+    else:
+        total_batches = epochs * (len(trainloader) // test_interval)
     with tqdm(total=total_batches, desc="Total Progress", unit="batch") as pbar:
         for epoch in range(epochs):
             model.train()
@@ -307,78 +334,79 @@ def train(
             if (epoch + 1) % test_interval == 0:
                 model.eval()
 
-                for batch_idx, (hists, labels, albedos, bg_albedos) in enumerate(testloader):
-                    hists = torch.tensor(hists).float().to(device)
-                    hists = self_norm(hists).float()
-                    # hists = normalize_hists(hists).float()
-                    labels = torch.tensor(labels).float().to(device)
-                    labels_obj_albedo = torch.tensor(albedos).float().to(device)
-                    labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
-                    
-                    outputs, a_logits, b_logits = model(hists)
+                if training_mode == "train":
+                    for batch_idx, (hists, labels, albedos, bg_albedos) in enumerate(testloader):
+                        hists = torch.tensor(hists).float().to(device)
+                        hists = self_norm(hists).float()
+                        # hists = normalize_hists(hists).float()
+                        labels = torch.tensor(labels).float().to(device)
+                        labels_obj_albedo = torch.tensor(albedos).float().to(device)
+                        labels_bg_albedo = torch.tensor(bg_albedos).float().to(device)
+                        
+                        outputs, a_logits, b_logits = model(hists)
 
-                    if rot_type == "6d":
-                        labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
-                        labels_trans = labels[:, :3, 3].reshape(labels.size(0), 3)
+                        if rot_type == "6d":
+                            labels_rot_6d = matrix_to_rotation_6d(labels[:, :3, :3])
+                            labels_trans = labels[:, :3, 3].reshape(labels.size(0), 3)
 
-                        outputs_rot_6d = outputs[:, :6]
-                        outputs_trans = outputs[:, 6:9]
+                            outputs_rot_6d = outputs[:, :6]
+                            outputs_trans = outputs[:, 6:9]
 
-                        labels_rot_matrix = labels[:, :3, :3]
-                        outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
+                            labels_rot_matrix = labels[:, :3, :3]
+                            outputs_rot_matrix = rotation_6d_to_matrix(outputs[:, :6])
 
-                        labels_obj_pc = torch.matmul(obj_points, labels_rot_matrix.transpose(1, 2))
-                        outputs_obj_pc = torch.matmul(
-                            obj_points, outputs_rot_matrix.transpose(1, 2)
+                            labels_obj_pc = torch.matmul(obj_points, labels_rot_matrix.transpose(1, 2))
+                            outputs_obj_pc = torch.matmul(
+                                obj_points, outputs_rot_matrix.transpose(1, 2)
+                            )
+                            
+                            labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
+                            outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
+
+                            # outputs_obj_albedo = outputs[:, 9]
+                            # outputs_bg_albedo = outputs[:, 10]
+                            
+                            outputs_obj_albedo = a_logits
+                            outputs_bg_albedo = b_logits
+                        else:
+                            raise Exception("support only 6d rotation type")
+
+                        loss, loss_dist = get_loss(
+                            outputs_rot_6d,
+                            labels_rot_6d,
+                            outputs_trans,
+                            labels_trans,
+                            outputs_obj_pc,
+                            labels_obj_pc,
+                            outputs_obj_albedo,
+                            labels_obj_albedo,
+                            outputs_bg_albedo,
+                            labels_bg_albedo,
+                            "test",
                         )
                         
-                        labels_obj_pc = labels_obj_pc + labels_trans.unsqueeze(1)
-                        outputs_obj_pc = outputs_obj_pc + outputs_trans.unsqueeze(1)
+                        wandb.log(loss_dist)
 
-                        # outputs_obj_albedo = outputs[:, 9]
-                        # outputs_bg_albedo = outputs[:, 10]
-                        
-                        outputs_obj_albedo = a_logits
-                        outputs_bg_albedo = b_logits
-                    else:
-                        raise Exception("support only 6d rotation type")
+                        # data = {
+                        #     "prediction_rot_6d": outputs_rot_6d[0].tolist(),
+                        #     "target_rot_6d": labels_rot_6d[0].tolist(),
+                        #     "prediction_trans": outputs_trans[0].tolist(),
+                        #     "target_trans": labels_trans[0].tolist(),
+                        #     "epoch": epoch,
+                        #     "batch": batch_idx,
+                        #     "dataset": "test",
+                        # }
+                        # epoch_data.append(data)
 
-                    loss, loss_dist = get_loss(
-                        outputs_rot_6d,
-                        labels_rot_6d,
-                        outputs_trans,
-                        labels_trans,
-                        outputs_obj_pc,
-                        labels_obj_pc,
-                        outputs_obj_albedo,
-                        labels_obj_albedo,
-                        outputs_bg_albedo,
-                        labels_bg_albedo,
-                        "test",
-                    )
-                    
-                    wandb.log(loss_dist)
-
-                    # data = {
-                    #     "prediction_rot_6d": outputs_rot_6d[0].tolist(),
-                    #     "target_rot_6d": labels_rot_6d[0].tolist(),
-                    #     "prediction_trans": outputs_trans[0].tolist(),
-                    #     "target_trans": labels_trans[0].tolist(),
-                    #     "epoch": epoch,
-                    #     "batch": batch_idx,
-                    #     "dataset": "test",
-                    # }
-                    # epoch_data.append(data)
-
-                    # Update progress bar
-                    pbar.update(1)
-                    pbar.set_postfix(
-                        epoch=epoch + 1,
-                        test_loss=loss.item(),
-                    )
+                        # Update progress bar
+                        pbar.update(1)
+                        pbar.set_postfix(
+                            epoch=epoch + 1,
+                            test_loss=loss.item(),
+                        )
 
                 if check_real:
-                    for batch_idx, (hists, labels, albedos, bg_albedos, filenames) in enumerate(real_testloader):
+                    for batch_idx, (hists, labels, albedos, bg_albedos) in enumerate(real_testloader):
                         hists = torch.tensor(hists).float().to(device)
                         hists = self_norm(hists).float()
                         # hists = normalize_hists(hists).float()
@@ -412,6 +440,7 @@ def train(
                             # outputs_obj_albedo = outputs[:, 9]
                             # outputs_bg_albedo = outputs[:, 10]
                             
+                    
                             outputs_obj_albedo = a_logits
                             outputs_bg_albedo = b_logits
                             
@@ -529,4 +558,6 @@ if __name__ == "__main__":
         symmetric_object=opts["symmetric_object"],
         optimizer_params=opts["optimizer"],
         scheduler_params=opts["scheduler"],
+        training_mode=opts["training_mode"],
+        checkpoint_path=opts["checkpoint_path"],
     )
