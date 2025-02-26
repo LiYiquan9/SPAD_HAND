@@ -7,6 +7,26 @@ import torch
 
 JSON_TO_MESHHIST_CAM_TF = np.array([[-1, 0, 0], [0, 1, 0], [0, 0, -1]])
 
+X_AXIS_180 = np.array([
+    [1, 0, 0, 0],
+    [0, -1, 0, 0],
+    [0, 0, -1, 0],
+    [0, 0, 0, 1],
+])
+
+Y_AXIS_180 = np.array([
+    [-1, 0, 0, 0],
+    [0, 1, 0, 0],
+    [0, 0, -1, 0],
+    [0, 0, 0, 1]
+])
+
+Z_AXIS_180 = np.array([
+    [-1, 0, 0, 0],
+    [0, -1, 0, 0],
+    [0, 0, 1, 0],
+    [0, 0, 0, 1]
+])
 
 def convert_json_to_meshhist_pose_format(
     poses_homog: List[np.ndarray],

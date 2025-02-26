@@ -13,8 +13,13 @@ import numpy as np
 import trimesh
 import yaml
 from tqdm import tqdm
-from util import convert_json_to_meshhist_pose_format, get_random_rot_matrix
-import random
+from util import (
+    X_AXIS_180,
+    Y_AXIS_180,
+    Z_AXIS_180,
+    convert_json_to_meshhist_pose_format,
+    get_random_rot_matrix,
+)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -51,6 +56,8 @@ def gen_sim_dataset(
     t_noise_level: float = 0.0,
     object_albedo_range: list = [1.0, 1.0],
     background_albedo_range: list = [1.0, 1.0],
+    include_180_flips: bool = False,
+    impulse_scale: float = 1.0,
 ) -> None:
     """
     Generate a simulated dataset for 6D pose recognition of a known mesh.
@@ -97,13 +104,18 @@ def gen_sim_dataset(
         constraint=constraint,
         plane_params=plane_params,
         obj_mesh=object_mesh,
+        include_180_flips=include_180_flips,
     )
 
     # (n_object_poses, n_cameras, n_bins)
     all_rendered_hists = np.zeros((len(object_poses), len(poses_homog), num_hist_bins))
-    object_albedos = np.random.uniform(object_albedo_range[0], object_albedo_range[1], size=object_poses.shape[0])
-    background_albedos = np.random.uniform(background_albedo_range[0], background_albedo_range[1], size=object_poses.shape[0])
-    
+    object_albedos = np.random.uniform(
+        object_albedo_range[0], object_albedo_range[1], size=object_poses.shape[0]
+    )
+    background_albedos = np.random.uniform(
+        background_albedo_range[0], background_albedo_range[1], size=object_poses.shape[0]
+    )
+
     for object_pose_idx, object_pose in tqdm(
         enumerate(object_poses), total=len(object_poses), desc="Generating simulated data"
     ):
@@ -121,13 +133,7 @@ def gen_sim_dataset(
                 "translations": cam_translations + t_noise,
                 "camera_ids": np.arange(len(poses_homog)),
             },
-            # mesh_info={
-            #     "vertices": scene_mesh.vertices,
-            #     "faces": scene_mesh.faces,
-            #     "face_normals": scene_mesh.face_normals,
-            #     "vert_normals": scene_mesh.vertex_normals,
-            # },
-                mesh_info={
+            mesh_info={
                 "vertices": transformed_object_mesh.vertices,
                 "faces": transformed_object_mesh.faces,
                 "face_normals": transformed_object_mesh.face_normals,
@@ -143,6 +149,32 @@ def gen_sim_dataset(
             num_bins=num_hist_bins,
             albedo_obj=object_albedos[object_pose_idx],
             albedo_bg=background_albedos[object_pose_idx],
+            jitter_kernel_scale=impulse_scale,
+        )
+
+        forward_model_default = MeshHist(
+            camera_config={
+                "rotations": cam_rotations,
+                "translations": cam_translations + t_noise,
+                "camera_ids": np.arange(len(poses_homog)),
+            },
+            mesh_info={
+                "vertices": transformed_object_mesh.vertices,
+                "faces": transformed_object_mesh.faces,
+                "face_normals": transformed_object_mesh.face_normals,
+                "vert_normals": transformed_object_mesh.vertex_normals,
+            },
+            background_mesh={
+                "vertices": plane_mesh.vertices,
+                "faces": plane_mesh.faces,
+                "face_normals": plane_mesh.face_normals,
+                "vert_normals": plane_mesh.vertex_normals,
+            },
+            with_bin_scaling=False,
+            num_bins=num_hist_bins,
+            albedo_obj=object_albedos[object_pose_idx],
+            albedo_bg=background_albedos[object_pose_idx],
+            jitter_kernel_scale=1.0,
         )
 
         # render histograms
@@ -155,8 +187,17 @@ def gen_sim_dataset(
 
         # modify hists to make it close to real hists
         rendered_hist = forward_model(None, None, image_output_path).detach().cpu().numpy()
-        # rendered_hist = np.roll(rendered_hist, shift=1, axis=1)
         rendered_hist = sim_data_adjustment(rendered_hist)
+
+        rendered_hist_default = forward_model_default(None, None, None).detach().cpu().numpy()
+        rendered_hist_default = sim_data_adjustment(rendered_hist_default)
+
+        # fig, ax = plt.subplots(1, 2)
+        # ax[0].plot(rendered_hist[0, :])
+        # ax[0].set_title("selected impulse scale")
+        # ax[1].plot(rendered_hist_default[0, :])
+        # ax[1].set_title("default impulse scale (1.0)")
+        # plt.show()
 
         all_rendered_hists[object_pose_idx, :, :] = rendered_hist
 
@@ -236,6 +277,7 @@ def generate_random_poses(
     constraint: str = "none",
     plane_params: dict = None,
     obj_mesh: trimesh.Trimesh = None,
+    include_180_flips: bool = False,
 ) -> np.ndarray:
     """
     Generate random object poses around the center translation.
@@ -249,8 +291,11 @@ def generate_random_poses(
             "object_above_surface", or "three_points_of_contact".
         plane_params: The plane model to use for object pose constraints. Not required if constraint
             is "none".
-        obj_mesh: The object mesh to use for object pose constraints. Not required if constraint is
-            "none".
+        obj_mesh: The object mesh to use for object pose constraints and to find the center for 
+            180 flips
+        include_180_flips: If True, for each sampled pose also include all three 180 degree
+            rotations of the same pose. This might help when training on near-symmetric objects to
+            force the network to distinguish between near-symmetries to reduce the loss.
 
     Returns:
         A numpy array of shape (n_poses, 4, 4) containing the random object poses.
@@ -269,10 +314,13 @@ def generate_random_poses(
                 "Plane model must be provided for object pose constraints if a constraint is specified."
             )
 
-    object_poses = []
+    if include_180_flips and n_poses % 4 != 0:
+        raise ValueError("Number of poses must be a multiple of 4 when include_180_flips is True.")
+
+    # sample poses
+    poses = []
     pose_idx = 0
-    rejected_samples = 0
-    pose_sampling_progress = tqdm(total=n_poses, desc="Generating object poses")
+    pose_sampling_progress = tqdm(total=n_poses, desc="Sampling object poses")
     while pose_idx < n_poses:
         translation = [
             center_t[0] + np.random.uniform(t_ranges["x"][0], t_ranges["x"][1]),
@@ -312,19 +360,58 @@ def generate_random_poses(
             elif constraint == "object_above_surface":
                 # if any point on the object is below the plane, reject the sample and try again
                 if plane_z > lowest_obj_vertex[2]:
-                    rejected_samples += 1
-                    continue
+                    # move the object so that the lowest vertex is as far above the surface as it
+                    # is below
+                    tf_homog[2, 3] += 2 * (plane_z - lowest_obj_vertex[2])
             elif constraint == "three_points_of_contact":
                 raise NotImplementedError("Three points of contact constraint not yet implemented.")
 
-        object_poses.append(tf_homog)
-        pose_idx += 1
-        pose_sampling_progress.update(1)
+        if include_180_flips:
+            poses.append(tf_homog)
+            poses.append(center_and_rotate(tf_homog, obj_mesh, X_AXIS_180))
+            poses.append(center_and_rotate(tf_homog, obj_mesh, Y_AXIS_180))
+            poses.append(center_and_rotate(tf_homog, obj_mesh, Z_AXIS_180))
+            pose_idx += 4
+            pose_sampling_progress.update(4)
+        else:
+            poses.append(tf_homog)
+            pose_idx += 1
+            pose_sampling_progress.update(1)
 
-    if rejected_samples > 0:
-        print(f"Rejected {rejected_samples} samples due to constraint violations.")
+    return np.array(poses)
 
-    return np.array(object_poses)
+
+def center_and_rotate(tf_homog: np.ndarray, obj_mesh: trimesh.Trimesh, rot_mat_homog: np.ndarray):
+    """
+    Apply a rotation to the pose given by tf_homog, about the center of the object mesh. So the
+    returned pose will be the same as tf_homog, but with the object rotated about its center.
+
+    Args:
+        tf_homog: The pose to rotate.
+        obj_mesh: The object mesh.
+        rot_mat_homog: The rotation matrix to apply.
+    """
+
+    # find the center of the object in its default pose by finding the center of its bounding box
+    obj_center = obj_mesh.bounds.mean(axis=0)
+
+    # find the object center with the original tf_homog applied
+    old_obj_center = tf_homog @ np.array([*obj_center, 1])
+
+    # apply the 180 degree translation to tf_homog
+    new_tf_homog = tf_homog @ rot_mat_homog
+
+    # find the center of the object with the new tf_homog
+    new_obj_center = new_tf_homog @ np.array([*obj_center, 1])
+
+    # apply an offset to the translation in new_tf_homog to keep the object centerpoint the same
+    new_tf_homog[:, 3] += old_obj_center - new_obj_center
+
+    # verify that the object center is the same
+    corrected_new_obj_center = new_tf_homog @ np.array([*obj_center, 1])
+    assert np.allclose(corrected_new_obj_center, old_obj_center)
+
+    return new_tf_homog
 
 
 if __name__ == "__main__":
@@ -361,4 +448,6 @@ if __name__ == "__main__":
         t_noise_level=opts["t_noise_level"],
         object_albedo_range=opts["object_albedo_range"],
         background_albedo_range=opts["background_albedo_range"],
+        include_180_flips=opts["include_180_flips"],
+        impulse_scale=opts["impulse_scale"],
     )

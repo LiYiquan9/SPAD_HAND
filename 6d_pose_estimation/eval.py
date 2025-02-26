@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from typing import List, Tuple
+import pandas as pd
 
 import matplotlib.pyplot as plt
 import open3d as o3d
@@ -18,8 +19,16 @@ from model import PoseEstimation6DModel
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
-from util import (convert_json_to_meshhist_pose_format, create_plane_mesh,
-                  homog_inv, vis_hists)
+from util import (
+    convert_json_to_meshhist_pose_format,
+    create_plane_mesh,
+    homog_inv,
+    vis_hists,
+    X_AXIS_180,
+    Y_AXIS_180,
+    Z_AXIS_180,
+)
+from gen_sim_dataset import center_and_rotate
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -32,8 +41,7 @@ import trimesh
 from scipy.spatial import cKDTree
 from torch.utils.data import DataLoader
 
-from hand_pose_estimation.utils.utils import (matrix_to_rotation_6d,
-                                              rotation_6d_to_matrix)
+from hand_pose_estimation.utils.utils import matrix_to_rotation_6d, rotation_6d_to_matrix
 from spad_mesh.sim.model import MeshHist
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,6 +101,11 @@ def test(
         None
     """
 
+    if "flips" in opt_params["method"] and opt_params["num_runs"] < 4:
+        raise ValueError(
+            "flips method, but num_runs is less than 4, so not all flips will be tried"
+        )
+
     if dset_type == "sim":
         full_dset_path = os.path.join(dset_path, "simulated_data.npz")
     else:
@@ -119,9 +132,9 @@ def test(
     test_labels = []
     for loaded_data in test_dataset:
         if dset_type == "sim":
-            _, label, albedos,albedos_bg = loaded_data
+            _, label, albedos, albedos_bg = loaded_data
         elif dset_type == "real":
-            _, label, albedos,albedos_bg, _ = loaded_data
+            _, label, albedos, albedos_bg, _ = loaded_data
 
         label_ortho6d = matrix_to_rotation_6d(torch.from_numpy(label[:3, :3])[None, :])[0]
         label_translation = label[:3, 3]
@@ -237,10 +250,9 @@ def test(
 
                 gt_obj_pcd = torch.matmul(obj_points, gt_rot_matrix.transpose(1, 2))
                 pred_obj_pcd = torch.matmul(obj_points, pred_rot_matrix.transpose(1, 2))
-                
+
                 gt_obj_pcd = gt_obj_pcd + gt_translation.unsqueeze(1)
                 pred_obj_pcd = pred_obj_pcd + pred_translation.unsqueeze(1)
-                
 
             else:
                 raise Exception("support only 6d rotation type")
@@ -313,6 +325,8 @@ def test(
         dset_type,
         num_samples_to_vis,
     )
+    get_percentiles(all_results, output_dir, pred_metrics.keys())
+
 
 def perturb_outputs(outputs, rotation_range, translation_range):
     """
@@ -329,13 +343,15 @@ def perturb_outputs(outputs, rotation_range, translation_range):
     pred_rot_6d = outputs[:, :6]
     pred_translation = outputs[:, 6:9]
 
-    # perturb rotation by choosing a random axis and angle in the rotation_range to apply to the 
+    # perturb rotation by choosing a random axis and angle in the rotation_range to apply to the
     # rotation matrix
     pred_rot_matrix = rotation_6d_to_matrix(pred_rot_6d)
     axis = make_rand_vector(3)
     angle = np.random.uniform(-rotation_range, rotation_range)
     perturbation_rot_matrix = R.from_rotvec(axis * angle).as_matrix()
-    perturbed_rot_matrix = pred_rot_matrix @ torch.from_numpy(perturbation_rot_matrix).float().to(device)
+    perturbed_rot_matrix = pred_rot_matrix @ torch.from_numpy(perturbation_rot_matrix).float().to(
+        device
+    )
     perturbed_rot_6d = matrix_to_rotation_6d(perturbed_rot_matrix)
 
     # perturb translation by adding a random vector in the translation_range
@@ -345,15 +361,15 @@ def perturb_outputs(outputs, rotation_range, translation_range):
     perturbed_translation = pred_translation + perturbation_translation
 
     return torch.cat([perturbed_rot_6d, perturbed_translation], dim=-1)
-    
+
 
 def make_rand_vector(dims):
     """
     Create a random dims-dimensional unit vector
     """
     vec = [gauss(0, 1) for i in range(dims)]
-    mag = sum(x**2 for x in vec) ** .5
-    return np.array([x/mag for x in vec])
+    mag = sum(x**2 for x in vec) ** 0.5
+    return np.array([x / mag for x in vec])
 
 
 def optimize(
@@ -368,56 +384,7 @@ def optimize(
     plane_mesh = trimesh.load(f"{sensor_plane_path}/gt/plane.obj")
     object_mesh = trimesh.load(obj_path)
 
-    # plane_mesh.vertices = [ # setting this fixes it??
-    #     [-5.,        -5.,        -0.0973211,],
-    #     [-5.,         5.,        -0.207898 ,],
-    #     [ 5.,         5.,        -0.234209 ,],
-    #     [ 5.,        -5.,        -0.123633 ,],
-    # ]
-
     plane_mesh.vertices[0][2] += 1e-7  # this fixes it????
-
-    # print("plane_mesh vertices", plane_mesh.vertices)
-    # print("plane mesh faces", plane_mesh.faces)
-    # print("plane mesh normals", plane_mesh.face_normals)
-    # print("plane mesh vertex normals", plane_mesh.vertex_normals)
-
-    """
-    mattewhite2 (broken)
-    plane_mesh vertices
-    [[-5.       -5.       -0.131366]
-    [-5.        5.       -0.210161]
-    [ 5.        5.       -0.199364]
-    [ 5.       -5.       -0.120569]]
-    plane mesh faces
-    [[0 2 1]
-    [0 3 2]]
-    plane mesh normals
-    [[-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]]
-    plane mesh vertex normals
-    [[-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]
-    [-0.00107967  0.00787925  0.99996838]]
-
-    real (works)
-    [[-5.        -5.        -0.0973211]
-    [-5.         5.        -0.207898 ]
-    [ 5.         5.        -0.234209 ]
-    [ 5.        -5.        -0.123633 ]]
-    plane mesh faces
-    [[0 2 1]
-    [0 3 2]]
-    plane mesh normals
-    [[0.00263093 0.01105698 0.99993541]
-    [0.00263102 0.01105689 0.99993541]]
-    plane mesh vertex normals
-    [[0.00263098 0.01105693 0.99993541]
-    [0.00263093 0.01105698 0.99993541]
-    [0.00263098 0.01105693 0.99993541]
-    [0.00263102 0.01105689 0.99993541]]
-    """
 
     # load rotation and translation from supervised model
     rotation = outputs_supervised[0, :6].reshape(2, 3).detach().requires_grad_()
@@ -620,7 +587,7 @@ def visualize_results(
                 dset_type,
                 dset_path,
                 result["filename"],
-                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.stl"),
+                os.path.join(output_dir, inference_mode, f"{sample_idx:06d}.jpg"),
             )
 
 
@@ -665,8 +632,8 @@ def render_mesh_from_viewpoints(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     combined_mesh.compute_vertex_normals()
     o3d.io.write_triangle_mesh(output_path, combined_mesh)
-    print("output_path ",output_path)
-    return
+    # print("output_path ", output_path)
+    # return
 
     vis = o3d.visualization.Visualizer()
     # window size needs to stay this - otherwise
@@ -736,7 +703,7 @@ def create_plane_mesh(
     d: float,
     x_bounds: Tuple[float, float] = (-5, 5),
     y_bounds: Tuple[float, float] = (-5, 5),
-# ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+    # ) -> o3d.cpu.pybind.geometry.TriangleMesh:
 ):
     """
     Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
@@ -921,6 +888,52 @@ def get_pred_metrics(
         "translation_error": translation_error,
         "rotation_error": rotation_error,
     }
+
+
+def get_percentiles(all_results: dict, output_path: str, metrics: list):
+    """
+    Print a json file that contains the results sorted by ADD-S and median, etc. results
+    """
+
+    # save sorted_results.json, which contains all the results sorted by metric for each inference
+    # mode
+    sorted_results = {inference_mode: {} for inference_mode in all_results.keys()}
+    for inference_mode in all_results.keys():
+        im_results = {metric: {} for metric in metrics}
+        for metric in metrics:
+            # df contains columns like the ADD, ADD-S, filename
+            df = pd.DataFrame(all_results[inference_mode])
+            df = df.sort_values(by=metric, ascending=True)
+            for row in df.iterrows():
+                im_results[metric][row[1]["filename"]] = row[1][metric]
+        sorted_results[inference_mode] = im_results
+
+    with open(os.path.join(output_path, "sorted_results.json"), "w") as f:
+        json.dump(sorted_results, f, indent=4)
+
+    # save percentiles.json, which contains the name and score for the 100th, 90th, 50th, 10th, 0th
+    # percentile for each metric and inference mode
+    percentiles = {inference_mode: {} for inference_mode in all_results.keys()}
+    for inference_mode in all_results.keys():
+        im_results = {metric: {} for metric in metrics}
+        for metric in metrics:
+            df = pd.DataFrame(all_results[inference_mode])
+            df = df.sort_values(by=metric, ascending=True)
+            im_results[metric]["100"] = {df.iloc[-1]["filename"]: df.iloc[-1][metric]}
+            im_results[metric]["90"] = {
+                df.iloc[int(0.9 * len(df))]["filename"]: df.iloc[int(0.9 * len(df))][metric]
+            }
+            im_results[metric]["50"] = {
+                df.iloc[int(0.5 * len(df))]["filename"]: df.iloc[int(0.5 * len(df))][metric]
+            }
+            im_results[metric]["10"] = {
+                df.iloc[int(0.1 * len(df))]["filename"]: df.iloc[int(0.1 * len(df))][metric]
+            }
+            im_results[metric]["0"] = {df.iloc[0]["filename"]: df.iloc[0][metric]}
+        percentiles[inference_mode] = im_results
+
+    with open(os.path.join(output_path, "percentiles.json"), "w") as f:
+        json.dump(percentiles, f, indent=4)
 
 
 if __name__ == "__main__":

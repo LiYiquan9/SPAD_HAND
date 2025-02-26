@@ -58,6 +58,7 @@ def objective(config):
         config["mesh_sample_count"],
         config["symmetric_object"],
         use_wandb=False,
+        mesh_name=config["mesh_name"]
     )
 
     test(
@@ -150,10 +151,11 @@ sweep_parameters = {
     "weight_decay": {"values": [1e-5, 1e-4, 1e-3, 1e-2]},
     "step_size": {"values": [10000, 5000, 1000]},
     "gamma": {"values": [0.9, 0.8, 0.6]},
+    "mesh_name": {"value": train_opts["mesh_name"]}
 }
 
 sweep_configuration = {
-    "method": "grid",
+    "method": "random",
     "metric": {
         "goal": "maximize",
         "name": f"supervised_{'AUC-ADD-S' if train_opts['symmetric_object'] else 'AUC-ADD'}",

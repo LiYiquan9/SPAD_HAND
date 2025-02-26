@@ -1,0 +1,16 @@
+---
+constraint: object_on_surface
+gen_previews: false
+mesh_path: data/obj_meshes/two.stl
+n_obj_poses: 50000
+num_hist_bins: 128
+real_dataset_path: data/real_data/6d_pose/colored_twos/glossy_white_refined_gt
+t_noise_level: 0.015
+translation_ranges:
+  x: [-0.1, 0.1]
+  y: [-0.1, 0.1]
+  z: [-0.1, 0.1]
+object_albedo_range: [1.0, 1.0]
+background_albedo_range: [1.0, 1.0]
+include_180_flips: True
+impulse_scale: 1.0

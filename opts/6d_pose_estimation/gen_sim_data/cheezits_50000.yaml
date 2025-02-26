@@ -10,6 +10,7 @@ translation_ranges:
   x: [-0.1, 0.1]
   y: [-0.1, 0.1]
   z: [-0.1, 0.1]
-albedos:
-  object: 0.925
-  background: 1.15
+object_albedo_range: [0.925, 0.925]
+background_albedo_range: [1.15, 1.15]
+include_180_flips: True
+impulse_scale: 1.0
