@@ -58,6 +58,7 @@ def gen_sim_dataset(
     background_albedo_range: list = [1.0, 1.0],
     include_180_flips: bool = False,
     impulse_scale: float = 1.0,
+    cam_poses_path: str = None,
 ) -> None:
     """
     Generate a simulated dataset for 6D pose recognition of a known mesh.
@@ -90,9 +91,15 @@ def gen_sim_dataset(
     object_mesh = trimesh.load(mesh_path)
 
     # read in camera positions and convert to MeshHist format
-    with open(os.path.join(real_dataset_path, "001", "tmf.json")) as f:
-        tmf_data = json.load(f)
-    poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
+    
+    if cam_poses_path is None:
+        with open(os.path.join(real_dataset_path, "001", "tmf.json")) as f:
+            tmf_data = json.load(f)
+        poses_homog = np.array([measurement["pose"] for measurement in tmf_data])
+    else:
+        poses_data = np.load(cam_poses_path)
+        poses_homog = poses_data["poses"]  # Shape: (N, 4, 4)
+
     cam_rotations, cam_translations = convert_json_to_meshhist_pose_format(poses_homog)
 
     avg_real_data_obj_translation = get_avg_obj_translation(real_dataset_path)
@@ -450,4 +457,5 @@ if __name__ == "__main__":
         background_albedo_range=opts["background_albedo_range"],
         include_180_flips=opts["include_180_flips"],
         impulse_scale=opts["impulse_scale"],
+        cam_poses_path=opts["cam_poses_path"],
     )
