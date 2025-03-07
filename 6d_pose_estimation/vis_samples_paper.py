@@ -5,18 +5,17 @@ Visualize samples (e.g. 90th, 50th, 10th percentile) visually, for use in the pa
 import argparse
 import json
 import os
+from typing import List, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
 import torch
+import torch.nn.functional as F
 import yaml
-from eval import create_plane_mesh
-from PIL import Image
+from PIL import Image, ImageEnhance
 from util import homog_inv
-
-from hand_pose_estimation.utils.utils import rotation_6d_to_matrix
 
 TMF_TO_REALSENSE_TF = np.array(
     [
@@ -28,11 +27,12 @@ TMF_TO_REALSENSE_TF = np.array(
 )
 
 # params for which samples to visualize
-PTILES_TO_VIS = [0, 50, 90]
+PTILES_TO_VIS = [0, 50, 99]
 METRIC = "ADD-S"
-# METHODS = ["supervised_model", "supervised_and_optimize"] # ICP is included if icp_results_path is provided
-METHODS = ["supervised_and_optimize"]
-VIEWPOINT_IDX = 2
+METHODS = ["supervised_model", "supervised_and_optimize"] # ICP is included if icp_results_path is provided
+# METHODS = ["supervised_and_optimize"]
+VIEWPOINT_IDXS = range(16)
+# VIEWPOINT_IDXS = [15]
 
 # grid composition params
 IMG_RES = 512  # resolution of a single square image in the grid
@@ -41,11 +41,15 @@ GRID_BG_COLOR = (255, 255, 255)
 CROP_TYPE = "right"  # can be left, right, or center
 
 # visualization rendering params
-MESH_ALPHA = 0.4
-MESH_COLOR = (0.5, 0.5, 0.5)
+MESH_ALPHA = 1.0
+MESH_COLOR = (0.5, 0.6, 0.9)
 STROKE_THICKNESS = 6
 STROKE_COLOR = (0, 255, 0)
-STROKE_ALPHA = 0.8
+STROKE_ALPHA = 0.0
+
+# rgb image adjustments
+BRIGHTNESS = 1.4
+CONTRAST = 1.2
 
 
 def vis_samples_paper(results_path, icp_results_path):
@@ -70,7 +74,6 @@ def vis_samples_paper(results_path, icp_results_path):
         sorted_results["ICP"] = icp_sorted_results["ICP"]
         METHODS.append("ICP")
 
-
     os.makedirs(os.path.join(results_path, "paper_vis"), exist_ok=True)
 
     # restructure model_predictions so that you can find things by the filename (key)
@@ -84,41 +87,106 @@ def vis_samples_paper(results_path, icp_results_path):
     model_predictions = restructured_model_predictions
 
     for method in METHODS:
-        num_samples = len(sorted_results[method][METRIC])
-        ptile_ranks = [int(num_samples * ptile / 100) for ptile in PTILES_TO_VIS]
-        ptile_keys = [list(sorted_results[method][METRIC].keys())[rank] for rank in ptile_ranks]
+        os.makedirs(os.path.join(results_path, "paper_vis", method, "raw"), exist_ok=True)
+        os.makedirs(os.path.join(results_path, "paper_vis", method, "grid"), exist_ok=True)
+        for viewpoint_idx in VIEWPOINT_IDXS:
+            num_samples = len(sorted_results[method][METRIC])
+            ptile_ranks = [int(num_samples * ptile / 100) for ptile in PTILES_TO_VIS]
+            ptile_keys = [list(sorted_results[method][METRIC].keys())[rank] for rank in ptile_ranks]
 
-        grid_img_res = (
-            IMG_RES * len(PTILES_TO_VIS) + GAP_SIZE * (len(PTILES_TO_VIS) - 1),
-            IMG_RES,
-        )
-        grid_img = Image.new("RGB", grid_img_res, GRID_BG_COLOR)
-
-        for ptile, ptile_key, ptile_idx in zip(
-            PTILES_TO_VIS, ptile_keys, range(len(PTILES_TO_VIS))
-        ):
-            pred = model_predictions[method][ptile_key]
-
-            img = vis_prediction(
-                pred,
-                ptile_key,
-                eval_opts["dset_path"],
-                eval_opts["obj_path"],
-                VIEWPOINT_IDX,
-                mesh_alpha=MESH_ALPHA,
+            grid_img_res = (
+                IMG_RES * len(PTILES_TO_VIS) + GAP_SIZE * (len(PTILES_TO_VIS) - 1),
+                IMG_RES,
             )
+            grid_img = Image.new("RGB", grid_img_res, GRID_BG_COLOR)
 
-            # resize image so that the smallest dimension is IMG_RES
-            if img.size[0] < img.size[1]:
-                img = img.resize((IMG_RES, int(img.size[1] * IMG_RES / img.size[0])))
-            else:
-                img = img.resize((int(img.size[0] * IMG_RES / img.size[1]), IMG_RES))
+            for ptile, ptile_key, ptile_idx in zip(
+                PTILES_TO_VIS, ptile_keys, range(len(PTILES_TO_VIS))
+            ):
+                pred = model_predictions[method][ptile_key]
 
-            img = crop_img_to_square(img, CROP_TYPE)
+                composite_img, rgb_img = vis_prediction(
+                    pred,
+                    ptile_key,
+                    eval_opts["dset_path"],
+                    eval_opts["obj_path"],
+                    viewpoint_idx,
+                    mesh_alpha=MESH_ALPHA,
+                )
 
-            grid_img.paste(img, (ptile_idx * (IMG_RES + GAP_SIZE), 0))
+                # resize image so that the smallest dimension is IMG_RES
+                if composite_img.size[0] < composite_img.size[1]:
+                    composite_img = composite_img.resize((IMG_RES, int(composite_img.size[1] * IMG_RES / composite_img.size[0])))
+                else:
+                    composite_img = composite_img.resize((int(composite_img.size[0] * IMG_RES / composite_img.size[1]), IMG_RES))
 
-        grid_img.save(os.path.join(results_path, "paper_vis", f"{method}.png"))
+                # save raw image
+                composite_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{ptile}.png"))
+                rgb_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{ptile}_rgb.png"))
+
+                composite_img = crop_img_to_square(composite_img, CROP_TYPE)
+
+                grid_img.paste(composite_img, (ptile_idx * (IMG_RES + GAP_SIZE), 0))
+
+            grid_img.save(os.path.join(results_path, "paper_vis", method, "grid", f"{viewpoint_idx}.png"))
+
+
+def create_plane_mesh(
+    a: float,
+    b: float,
+    c: float,
+    d: float,
+    x_bounds: Tuple[float, float] = (-5, 5),
+    y_bounds: Tuple[float, float] = (-5, 5),
+    # ) -> o3d.cpu.pybind.geometry.TriangleMesh:
+):
+    """
+    Create a triangle mesh representing the plane defined by the equation a*x + b*y + c*z + d = 0.
+
+    Assumes the mesh is not (very near to) vertical.
+    """
+
+    def get_z(x, y):
+        return (-a * x - b * y - d) / c
+
+    # create a point at each corner of the plane
+    p1 = np.array([x_bounds[0], y_bounds[0], get_z(x_bounds[0], y_bounds[0])])
+    p2 = np.array([x_bounds[0], y_bounds[1], get_z(x_bounds[0], y_bounds[1])])
+    p3 = np.array([x_bounds[1], y_bounds[1], get_z(x_bounds[1], y_bounds[1])])
+    p4 = np.array([x_bounds[1], y_bounds[0], get_z(x_bounds[1], y_bounds[0])])
+
+    # create a mesh from the points with two triangles
+    mesh = o3d.geometry.TriangleMesh()
+    mesh.vertices = o3d.utility.Vector3dVector([p1, p2, p3, p4])
+    # the below vertex windings create a plane normal pointing in the positive z direction,
+    # so it is visible from above
+    mesh.triangles = o3d.utility.Vector3iVector([[0, 2, 1], [0, 3, 2]])
+
+    return mesh
+
+
+def rotation_6d_to_matrix(d6: torch.Tensor) -> torch.Tensor:
+    """
+    Converts 6D rotation representation by Zhou et al. [1] to rotation matrix
+    using Gram--Schmidt orthogonalization per Section B of [1].
+    Args:
+        d6: 6D rotation representation, of size (*, 6)
+
+    Returns:
+        batch of rotation matrices of size (*, 3, 3)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+
+    a1, a2 = d6[..., :3], d6[..., 3:]
+    b1 = F.normalize(a1, dim=-1)
+    b2 = a2 - (b1 * a2).sum(-1, keepdim=True) * b1
+    b2 = F.normalize(b2, dim=-1)
+    b3 = torch.cross(b1, b2, dim=-1)
+    return torch.stack((b1, b2, b3), dim=-2)
 
 
 def vis_prediction(
@@ -162,6 +230,12 @@ def vis_prediction(
     rgb_img = Image.open(rgb_path)
     rgb_img = rgb_img.convert("RGBA")
 
+    # apply adjustments to RGB image (brightness, contrast)
+    enhancer = ImageEnhance.Brightness(rgb_img)
+    rgb_img = enhancer.enhance(BRIGHTNESS)
+    enhancer = ImageEnhance.Contrast(rgb_img)
+    rgb_img = enhancer.enhance(CONTRAST)
+
     """
     Create scene and render
     """
@@ -202,13 +276,12 @@ def vis_prediction(
     # with transparent pixels
     screen_img = screen_img.convert("RGBA")
     screen_data = np.array(screen_img)
-    white_mask = (screen_data[:, :, 0] == 255) & (screen_data[:, :, 1] == 255) & (screen_data[:, :, 2] == 255)
+    white_mask = (
+        (screen_data[:, :, 0] == 255)
+        & (screen_data[:, :, 1] == 255)
+        & (screen_data[:, :, 2] == 255)
+    )
     screen_data[white_mask] = [255, 255, 255, 0]
-    screen_img = Image.fromarray(screen_data)
-
-    # set alpha of non-transparent screen image pixels to 0.5
-    screen_data = np.array(screen_img)
-    screen_data[screen_data[:, :, 3] != 0, 3] = mesh_alpha * 255
     screen_img = Image.fromarray(screen_data)
 
     outline_img = get_outline_img(screen_img, STROKE_THICKNESS, STROKE_COLOR)
@@ -216,6 +289,11 @@ def vis_prediction(
     outline_data = np.array(outline_img)
     outline_data[outline_data[:, :, 3] != 0, 3] = STROKE_ALPHA * 255
     outline_img = Image.fromarray(outline_data)
+
+    # set alpha of non-transparent screen image pixels to 0.5
+    screen_data = np.array(screen_img)
+    screen_data[screen_data[:, :, 3] != 0, 3] = mesh_alpha * 255
+    screen_img = Image.fromarray(screen_data)
 
     # overlay the RGB image on top of the screen image
     # composite_img = Image.alpha_composite(rgb_img, screen_img)
@@ -230,7 +308,7 @@ def vis_prediction(
     # fig.tight_layout()
     # plt.show()
 
-    return composite_img
+    return composite_img, rgb_img
 
 
 def get_outline_img(
@@ -290,6 +368,7 @@ def rot_mat_from_6d_trans(rot_6d: np.array, trans: np.array) -> np.array:
 
     return transformation_matrix
 
+
 def crop_img_to_square(img, crop_type):
     if crop_type == "center":
         img = img.crop(
@@ -320,6 +399,7 @@ def crop_img_to_square(img, crop_type):
         )
 
     return img
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test a pose estimation model")
