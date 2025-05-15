@@ -17,46 +17,53 @@ TMF_TO_REALSENSE_TF = np.array(
     ]
 )
 
-DSET_PATH = "/home/carter/projects/SPAD-6D-Pose-Capture/data/captures/YCB/mustard_refined_gt"
-FOUNDATIONPOSE_PREDS_PATH = "6d_pose_estimation/results/vis_for_paper/mustard_foundationpose/foundationpose_preds"
+# for mustard
+# DSET_PATH = "/home/carter/projects/SPAD-6D-Pose-Capture/data/captures/YCB/mustard_refined_gt"
+# FOUNDATIONPOSE_PREDS_PATH = "6d_pose_estimation/results/vis_for_paper/mustard_foundationpose/foundationpose_preds"
 
-OBJ_POSE_IDX = 1
-VIEWPOINT_IDXS = range(15)
+# for two
+DSET_PATH = "/home/carter/projects/SPAD-6D-Pose-Capture/data/captures/colored_twos/matte_white_refined_gt"
+FOUNDATIONPOSE_PREDS_PATH = "6d_pose_estimation/results/vis_for_paper/two/foundationpose_preds"
+
+OBJ_POSE_IDXS = range(25)
+VIEWPOINT_IDXS = [14]
 
 def convert_foundationpose_preds(dset_path, foundationpose_preds_path):
 
     output = {}
 
     for viewpoint_idx in VIEWPOINT_IDXS:
-        with open(os.path.join(foundationpose_preds_path, f"{viewpoint_idx+1:06d}.txt"), "r") as f:
-            pred = np.loadtxt(f)
+        for obj_pose_idx in OBJ_POSE_IDXS:
+            with open(os.path.join(foundationpose_preds_path, "ob_in_cam", f"{obj_pose_idx+1:03d}.txt"), "r") as f:
+                pred = np.loadtxt(f)
 
-        with open(os.path.join(dset_path, f"{OBJ_POSE_IDX:03d}", "tmf.json"), "r") as f:
-            tmf_data = json.load(f)
-        tmf_pose = np.array(tmf_data[viewpoint_idx]["pose"])
+            with open(os.path.join(dset_path, f"{obj_pose_idx+1:03d}", "tmf.json"), "r") as f:
+                tmf_data = json.load(f)
+            tmf_pose = np.array(tmf_data[viewpoint_idx]["pose"])
 
-        cam_pose = tmf_pose @ TMF_TO_REALSENSE_TF
+            cam_pose = tmf_pose @ TMF_TO_REALSENSE_TF
 
-        pred_global = cam_pose @ pred
+            pred_global = cam_pose @ pred
 
-        pred_translation = pred_global[:3, 3]
-        pred_rot_6d = matrix_to_rotation_6d(torch.from_numpy(pred_global[:3, :3])[None, ...])[0]
+            pred_translation = pred_global[:3, 3]
+            pred_rot_6d = matrix_to_rotation_6d(torch.from_numpy(pred_global[:3, :3])[None, ...])[0]
 
-        print("viewpoint_idx", viewpoint_idx)
-        print("pred_translation", pred_translation)
-        print("pred_rot_6d", pred_rot_6d)
+            print("viewpoint_idx", viewpoint_idx)
+            print("obj_pose_idx", obj_pose_idx)
+            print("pred_translation", pred_translation)
+            print("pred_rot_6d", pred_rot_6d)
 
-        output[f"{viewpoint_idx+1:06d}"] = {
-            "pred_translation": pred_translation.tolist(),
-            "pred_rot_6d": pred_rot_6d.tolist(),
-            "viewpoint_idx": viewpoint_idx,
-            "obj_pose_idx": OBJ_POSE_IDX,
-            "dset_path": dset_path,
-            "foundationpose_preds_path": foundationpose_preds_path,
-        }
+            output[f"{obj_pose_idx+1:03d}"] = {
+                "pred_translation": pred_translation.tolist(),
+                "pred_rot_6d": pred_rot_6d.tolist(),
+                "viewpoint_idx": viewpoint_idx,
+                "obj_pose_idx": obj_pose_idx,
+                "dset_path": dset_path,
+                "foundationpose_preds_path": foundationpose_preds_path,
+            }
 
-        with open(FOUNDATIONPOSE_PREDS_PATH + "_converted.json", "w") as f:
-            json.dump(output, f, indent=4)
+    with open(FOUNDATIONPOSE_PREDS_PATH + "_converted.json", "w") as f:
+        json.dump(output, f, indent=4)
 
 
 def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:

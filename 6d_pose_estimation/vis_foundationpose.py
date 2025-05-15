@@ -33,7 +33,7 @@ PTILES_TO_VIS = [0, 25, 50, 75, 99]
 METRIC = "ADD-S"
 METHODS = ["supervised_model", "supervised_and_optimize"] # ICP is included if icp_results_path is provided
 # METHODS = ["supervised_and_optimize"]
-VIEWPOINT_IDXS = range(16)
+VIEWPOINT_IDXS = [14]
 # VIEWPOINT_IDXS = []
 
 # grid composition params
@@ -86,18 +86,17 @@ def vis_samples_paper(results_path):
     for viewpoint_idx in VIEWPOINT_IDXS:
         os.makedirs(os.path.join(results_path, "paper_vis", method, "raw"), exist_ok=True)
 
-        for obj_pose_idx in [1]:
-
+        for obj_pose_idx in range(25):
             pred = None
 
             # to get supervised model predictions for debugging - looks good
-            supervised_pred = model_predictions["supervised_model"][f"{obj_pose_idx:03d}"]
+            supervised_pred = model_predictions["supervised_model"][f"{obj_pose_idx+1:03d}"]
             print(supervised_pred)
 
             # to get foundationpose prediction - what we really want to check is correct
             # if I can just get foundationpose to work then have it save the predictions converted
             # to the same format as the supervised model predictions, that would be enough
-            with open(os.path.join(results_path, "foundationpose_preds", f"{viewpoint_idx+1:06d}.txt"), "r") as f:
+            with open(os.path.join(results_path, "foundationpose_preds", "ob_in_cam",f"{obj_pose_idx+1:03d}.txt"), "r") as f:
                 foundationpose_pred = np.loadtxt(f)
             
             print(foundationpose_pred)
@@ -106,7 +105,7 @@ def vis_samples_paper(results_path):
             # foundationpose predictions are tf from camera frame to object frame. We need to convert
             # that to the tf from the global frame to the object frame. So we need the camera pose
             # in the global frame. Have to get that from the TMF data.
-            with open(os.path.join(eval_opts["dset_path"], f"{obj_pose_idx:03d}", "tmf.json"), "r") as f:
+            with open(os.path.join(eval_opts["dset_path"], f"{obj_pose_idx+1:03d}", "tmf.json"), "r") as f:
                 tmf_data = json.load(f)
             tmf_pose = np.array(tmf_data[viewpoint_idx]["pose"])
 
@@ -129,12 +128,13 @@ def vis_samples_paper(results_path):
 
             
             print("viewpoint_idx", viewpoint_idx)
+            print("obj_pose_idx", obj_pose_idx)
             print("pred_translation", pred["pred_translation"])
             print("pred_rot_6d", pred["pred_rot_6d"])
 
             composite_img, rgb_img = vis_prediction(
                 pred,
-                f"{obj_pose_idx:03d}",
+                f"{obj_pose_idx+1:03d}",
                 eval_opts["dset_path"],
                 eval_opts["obj_path"],
                 viewpoint_idx,
