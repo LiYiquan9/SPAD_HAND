@@ -128,6 +128,10 @@ def vis_samples_paper(results_path):
             pred["pred_rot_6d"] = matrix_to_rotation_6d(torch.from_numpy(foundationpose_pred_global[:3, :3])[None, ...])[0]
 
             
+            print("viewpoint_idx", viewpoint_idx)
+            print("pred_translation", pred["pred_translation"])
+            print("pred_rot_6d", pred["pred_rot_6d"])
+
             composite_img, rgb_img = vis_prediction(
                 pred,
                 f"{obj_pose_idx:03d}",

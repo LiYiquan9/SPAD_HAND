@@ -19,16 +19,11 @@ TMF_TO_REALSENSE_TF = np.array(
 
 DSET_PATH = "/home/carter/projects/SPAD-6D-Pose-Capture/data/captures/YCB/mustard_refined_gt"
 FOUNDATIONPOSE_PREDS_PATH = "6d_pose_estimation/results/vis_for_paper/mustard_foundationpose/foundationpose_preds"
-EXISTING_PREDS_PATH = "6d_pose_estimation/results/vis_for_paper/mustard_foundationpose/model_predictions.json"
 
 OBJ_POSE_IDX = 1
 VIEWPOINT_IDXS = range(15)
 
 def convert_foundationpose_preds(dset_path, foundationpose_preds_path):
-
-    # backup existing predictions
-    # TODO: make this script add to the existing predictions with the foundationpose predictions
-    shutil.copy(EXISTING_PREDS_PATH, EXISTING_PREDS_PATH + "_backup")
 
     output = {}
 
@@ -47,9 +42,17 @@ def convert_foundationpose_preds(dset_path, foundationpose_preds_path):
         pred_translation = pred_global[:3, 3]
         pred_rot_6d = matrix_to_rotation_6d(torch.from_numpy(pred_global[:3, :3])[None, ...])[0]
 
+        print("viewpoint_idx", viewpoint_idx)
+        print("pred_translation", pred_translation)
+        print("pred_rot_6d", pred_rot_6d)
+
         output[f"{viewpoint_idx+1:06d}"] = {
             "pred_translation": pred_translation.tolist(),
             "pred_rot_6d": pred_rot_6d.tolist(),
+            "viewpoint_idx": viewpoint_idx,
+            "obj_pose_idx": OBJ_POSE_IDX,
+            "dset_path": dset_path,
+            "foundationpose_preds_path": foundationpose_preds_path,
         }
 
         with open(FOUNDATIONPOSE_PREDS_PATH + "_converted.json", "w") as f:
