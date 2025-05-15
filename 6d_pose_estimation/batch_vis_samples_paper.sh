@@ -1,0 +1,11 @@
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/A -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/A && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/armadillo -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/armadillo &&
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/basketball -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/basketball && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/bunny -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/bunny && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/cracker -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/crackers && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/L -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/L && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/mustard -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/mustard && 
+python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/P -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/P
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/pringles -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/chips && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/spam -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/spam && 
+# python 6d_pose_estimation/vis_samples_paper.py -r 6d_pose_estimation/results/vis_for_paper/two -i /home/carter/projects/SPAD-6D-Pose-Capture/data/icp_baseline_results/single_pixel/two

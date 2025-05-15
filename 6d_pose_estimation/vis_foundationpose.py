@@ -33,8 +33,8 @@ PTILES_TO_VIS = [0, 25, 50, 75, 99]
 METRIC = "ADD-S"
 METHODS = ["supervised_model", "supervised_and_optimize"] # ICP is included if icp_results_path is provided
 # METHODS = ["supervised_and_optimize"]
-# VIEWPOINT_IDXS = range(16)
-VIEWPOINT_IDXS = [15]
+VIEWPOINT_IDXS = range(16)
+# VIEWPOINT_IDXS = []
 
 # grid composition params
 IMG_RES = 512  # resolution of a single square image in the grid
@@ -54,7 +54,7 @@ BRIGHTNESS = 1.4
 CONTRAST = 1.2
 
 
-def vis_samples_paper(results_path, icp_results_path, icp_high_res_results_path):
+def vis_samples_paper(results_path):
 
     # if os.path.basename(results_path) in ["A", "armadillo", "bunny", "L", "P", "two"]:
     #     METRIC = "ADD"
@@ -70,28 +70,6 @@ def vis_samples_paper(results_path, icp_results_path, icp_high_res_results_path)
     with open(os.path.join(results_path, "opts.yaml"), "r") as f:
         eval_opts = yaml.safe_load(f)
 
-    # if icp_results_path is provided, laod the icp results and merge them in with model_predictions
-    # and sorted_results
-    if icp_results_path is not None:
-        with open(os.path.join(icp_results_path, "sorted_results.json"), "r") as f:
-            icp_sorted_results = json.load(f)
-        with open(os.path.join(icp_results_path, "model_predictions.json"), "r") as f:
-            icp_model_predictions = json.load(f)
-        model_predictions["ICP"] = icp_model_predictions["ICP"]
-        sorted_results["ICP"] = icp_sorted_results["ICP"]
-        METHODS.insert(0, "ICP") # put ICP at the start of the list
-
-    # if icp_high_res_results_path is provided, laod the icp results and merge them in with model_predictions
-    # and sorted_results
-    if icp_high_res_results_path is not None:
-        with open(os.path.join(icp_high_res_results_path, "sorted_results.json"), "r") as f:
-            icp_sorted_results = json.load(f)
-        with open(os.path.join(icp_high_res_results_path, "model_predictions.json"), "r") as f:
-            icp_model_predictions = json.load(f)
-        model_predictions["ICP_high_res"] = icp_model_predictions["ICP"]
-        sorted_results["ICP_high_res"] = icp_sorted_results["ICP"]
-        METHODS.insert(0, "ICP_high_res") # put ICP_high_res at the start of the list
-
     os.makedirs(os.path.join(results_path, "paper_vis"), exist_ok=True)
 
     # restructure model_predictions so that you can find things by the filename (key)
@@ -106,63 +84,69 @@ def vis_samples_paper(results_path, icp_results_path, icp_high_res_results_path)
 
 
     for viewpoint_idx in VIEWPOINT_IDXS:
-        full_grid_img = Image.new(
-            "RGB",
-            (
-                len(PTILES_TO_VIS) * (IMG_RES + GAP_SIZE) - GAP_SIZE,
-                len(METHODS) * (IMG_RES + GAP_SIZE), # add one to methods to accomodate the rgb image at the top
-            ),
-            GRID_BG_COLOR,
-        )
-        for method_idx, method in enumerate(METHODS):
-            os.makedirs(os.path.join(results_path, "paper_vis", method, "raw"), exist_ok=True)
-            os.makedirs(os.path.join(results_path, "paper_vis", method, "grid"), exist_ok=True)
-            num_samples = len(sorted_results[method][METRIC])
-            ptile_ranks = [int(num_samples * ptile / 100) for ptile in PTILES_TO_VIS]
-            ptile_keys = [list(sorted_results[method][METRIC].keys())[rank] for rank in ptile_ranks]
+        os.makedirs(os.path.join(results_path, "paper_vis", method, "raw"), exist_ok=True)
 
-            grid_img_res = (
-                IMG_RES * len(PTILES_TO_VIS) + GAP_SIZE * (len(PTILES_TO_VIS) - 1),
-                IMG_RES,
+        for obj_pose_idx in [1]:
+
+            pred = None
+
+            # to get supervised model predictions for debugging - looks good
+            supervised_pred = model_predictions["supervised_model"][f"{obj_pose_idx:03d}"]
+            print(supervised_pred)
+
+            # to get foundationpose prediction - what we really want to check is correct
+            # if I can just get foundationpose to work then have it save the predictions converted
+            # to the same format as the supervised model predictions, that would be enough
+            with open(os.path.join(results_path, "foundationpose_preds", f"{viewpoint_idx+1:06d}.txt"), "r") as f:
+                foundationpose_pred = np.loadtxt(f)
+            
+            print(foundationpose_pred)
+            print()
+            
+            # foundationpose predictions are tf from camera frame to object frame. We need to convert
+            # that to the tf from the global frame to the object frame. So we need the camera pose
+            # in the global frame. Have to get that from the TMF data.
+            with open(os.path.join(eval_opts["dset_path"], f"{obj_pose_idx:03d}", "tmf.json"), "r") as f:
+                tmf_data = json.load(f)
+            tmf_pose = np.array(tmf_data[viewpoint_idx]["pose"])
+
+            # get camera pose in global frame
+            cam_pose = tmf_pose @ TMF_TO_REALSENSE_TF
+
+            # convert foundationpose prediction to global frame
+            foundationpose_pred_global = cam_pose @ foundationpose_pred
+
+            # toggle between supervised and foundationpose predictions
+            pred = supervised_pred
+            # pred = foundationpose_preds
+
+            # get the translation components of the foundationpose pred and set that as the pred
+            # translation and check that it still works
+            pred["pred_translation"] = foundationpose_pred_global[:3, 3]
+
+            # do the same for the rotation - need to convert from homog. mat to 6d representation
+            pred["pred_rot_6d"] = matrix_to_rotation_6d(torch.from_numpy(foundationpose_pred_global[:3, :3])[None, ...])[0]
+
+            
+            composite_img, rgb_img = vis_prediction(
+                pred,
+                f"{obj_pose_idx:03d}",
+                eval_opts["dset_path"],
+                eval_opts["obj_path"],
+                viewpoint_idx,
+                mesh_alpha=MESH_ALPHA,
             )
-            grid_img = Image.new("RGB", grid_img_res, GRID_BG_COLOR)
-            rgb_grid_img = Image.new("RGB", grid_img_res, GRID_BG_COLOR)
 
-            for ptile, ptile_key, ptile_idx in zip(
-                PTILES_TO_VIS, ptile_keys, range(len(PTILES_TO_VIS))
-            ):
-                print("ptile", ptile)
-                pred = model_predictions[method][ptile_key]
+            # resize image so that the smallest dimension is IMG_RES
+            if composite_img.size[0] < composite_img.size[1]:
+                composite_img = composite_img.resize((IMG_RES, int(composite_img.size[1] * IMG_RES / composite_img.size[0])))
+            else:
+                composite_img = composite_img.resize((int(composite_img.size[0] * IMG_RES / composite_img.size[1]), IMG_RES))
 
-                composite_img, rgb_img = vis_prediction(
-                    pred,
-                    ptile_key,
-                    eval_opts["dset_path"],
-                    eval_opts["obj_path"],
-                    viewpoint_idx,
-                    mesh_alpha=MESH_ALPHA,
-                )
+            # save raw image
+            composite_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{obj_pose_idx:03d}.png"))
+            rgb_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{obj_pose_idx:03d}_rgb.png"))
 
-                # resize image so that the smallest dimension is IMG_RES
-                if composite_img.size[0] < composite_img.size[1]:
-                    composite_img = composite_img.resize((IMG_RES, int(composite_img.size[1] * IMG_RES / composite_img.size[0])))
-                else:
-                    composite_img = composite_img.resize((int(composite_img.size[0] * IMG_RES / composite_img.size[1]), IMG_RES))
-
-                # save raw image
-                composite_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{ptile}.png"))
-                rgb_img.save(os.path.join(results_path, "paper_vis", method, "raw", f"{viewpoint_idx}_{ptile}_rgb.png"))
-
-                composite_img = crop_img_to_square(composite_img, CROP_TYPE)
-                rgb_img = crop_img_to_square(rgb_img, CROP_TYPE)
-
-                grid_img.paste(composite_img, (ptile_idx * (IMG_RES + GAP_SIZE), 0))
-
-            grid_img.save(os.path.join(results_path, "paper_vis", method, "grid", f"{viewpoint_idx}.png"))
-            full_grid_img.paste(
-                grid_img, (0, method_idx * (IMG_RES + GAP_SIZE)) # + 1 to method_idx to accomodate rgb image at the top
-            )
-        full_grid_img.save(os.path.join(results_path, "paper_vis", f"{viewpoint_idx}.png"))
 
 
 def create_plane_mesh(
@@ -414,6 +398,23 @@ def rot_mat_from_6d_trans(rot_6d: np.array, trans: np.array) -> np.array:
 
     return transformation_matrix
 
+def matrix_to_rotation_6d(matrix: torch.Tensor) -> torch.Tensor:
+    """
+    Converts rotation matrices to 6D rotation representation by Zhou et al. [1]
+    by dropping the last row. Note that 6D representation is not unique.
+    Args:
+        matrix: batch of rotation matrices of size (*, 3, 3)
+
+    Returns:
+        6D rotation representation, of size (*, 6)
+
+    [1] Zhou, Y., Barnes, C., Lu, J., Yang, J., & Li, H.
+    On the Continuity of Rotation Representations in Neural Networks.
+    IEEE Conference on Computer Vision and Pattern Recognition, 2019.
+    Retrieved from http://arxiv.org/abs/1812.07035
+    """
+    batch_dim = matrix.size()[:-2]
+    return matrix[..., :2, :].clone().reshape(batch_dim + (6,))
 
 def crop_img_to_square(img, crop_type):
     if crop_type == "center":
@@ -456,20 +457,6 @@ if __name__ == "__main__":
         help="Path to results folder generated by eval.py. Should contain a 'summary_metrics.json', etc.",
         required=True,
     )
-    parser.add_argument(
-        "-i",
-        "--icp_results_path",
-        type=str,
-        help="Path to results folder generated by icp baseline. Should contain a 'summary_metrics.json', etc.",
-        required=False,
-    )
-    parser.add_argument(
-        "-ih",
-        "--icp_high_res_results_path",
-        type=str,
-        help="Path to results folder generated by icp baseline. Should contain a 'summary_metrics.json', etc.",
-        required=False,
-    )
     args = parser.parse_args()
 
-    vis_samples_paper(args.results_path, args.icp_results_path, args.icp_high_res_results_path)
+    vis_samples_paper(args.results_path)
